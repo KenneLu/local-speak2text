@@ -44,6 +44,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path models/sensevoice-small-int8 | Out-Null
           Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx models/sensevoice-small-int8/
           Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt models/sensevoice-small-int8/
+          # test clip for the pipeline-selftest gate (ships with the SV package)
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav models/test_zh.wav
           $qwen = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2"
           Invoke-WebRequest -Uri $qwen -OutFile qwen.tar.bz2
           tar -xjf qwen.tar.bz2
@@ -68,8 +70,9 @@ jobs:
           Write-Host "version=$version"
 
       # build.bat runs the gates, builds, and runs the frozen smoke check.
-      # The packaged config points at ../../models which does not exist in the
-      # release layout, so CI overrides it to the downloaded copy.
+      # The smoke gate pins LOCALSPEAK2TEXT_CONFIG to the release folder's
+      # shipped config (model_dir relative to the exe); pipeline's upward
+      # fallback resolves it to the models/ downloaded above.
       - name: Build release
         shell: cmd
         run: build.bat norun nopause

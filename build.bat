@@ -138,12 +138,13 @@ if errorlevel 8 (
   exit /b 1
 )
 if exist README.md copy /y README.md "%RELEASE_DIR%" >nul
+if exist README.zh-CN.md copy /y README.zh-CN.md "%RELEASE_DIR%" >nul
 
 rem Packaged config: model_dir sits NEXT TO the exe (the natural layout for an
 rem unpacked zip; the 2GB models folder is never shipped inside the package).
 rem Falls back to defaults when config.json is absent (fresh CI checkout).
 echo [CONFIG] writing packaged config.json ...
-"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':''}; cfg['model_dir']='models/qwen3-asr-0.6B'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
+"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':'KenneLu/local-speak2text'}; cfg['model_dir']='models/sensevoice-small-int8'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 if errorlevel 1 (
   echo [ERROR] write config failed.
   if not defined NOPAUSE pause
@@ -171,25 +172,11 @@ if not exist "%RELEASE_DIR%\_internal\%APPNAME%-taskbar.ico" (
 
 rem ---------------------------------------------------------------------------
 rem Frozen check: the packaged exe must prove itself before shipping.
-rem
-rem Two configs, on purpose:
-rem   * shipped    %RELEASE_DIR%\config.json - model_dir "models/..." relative
-rem                to the exe (the layout an end user has after unpacking)
-rem   * check-only %BUILD_CACHE%\smoke-config.json - same fields but model_dir
-rem                pointing at THIS checkout's models (absolute), because the
-rem                dev machine/CI keeps the 2GB models in the repo, not in the
-rem                fresh release folder. Same idea as reme-helper's
-rem                REME_HELPER_CONFIG pinning the packaged self-check.
+rem LOCALSPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
+rem (model_dir resolves via the upward fallback to the repo's models/).
 rem ---------------------------------------------------------------------------
 set "PYTHONUTF8=1"
-if not exist "models\qwen3-asr-0.6B\encoder.int8.onnx" (
-  echo [ERROR] models\qwen3-asr-0.6B not found - the smoke gate needs the real model.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-if not exist ".cache" mkdir ".cache"
-"%PY%" -c "import json,os; cfg=json.load(open(r'%RELEASE_DIR%\config.json',encoding='utf-8-sig')); cfg['model_dir']=os.path.abspath('models/qwen3-asr-0.6B'); json.dump(cfg,open(r'.cache\smoke-config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
-set "LOCALSPEAK2TEXT_CONFIG=%CD%\.cache\smoke-config.json"
+set "LOCALSPEAK2TEXT_CONFIG=%CD%\%RELEASE_DIR%\config.json"
 echo [TEST] smoke test ...
 "%FROZEN_EXE%" --smoke
 set SMOKE_RC=%errorlevel%

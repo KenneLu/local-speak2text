@@ -16,7 +16,7 @@ from pathlib import Path
 
 APP_ID = "local-speak2text"
 APP_NAME = "LocalSpeak2Text"
-VERSION = "1.1.0"
+VERSION = "1.1.2"
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
