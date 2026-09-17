@@ -1,0 +1,50 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    # The suites print Chinese; a hosted runner's stdout is a pipe, so Python
+    # would encode it as cp1252 and die on the first non-ASCII print.
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy sherpa-onnx sounddevice pystray pillow pyperclip
+
+      # Each gate is its own step so a failure names the gate in the UI.
+      # The full pipeline selftest needs the ASR model, which is not in the
+      # repo (2GB); compile + i18n + icon gates run everywhere, the model
+      # roundtrip runs only where models/ exists (local machine).
+      - name: Compile check
+        run: python -m py_compile main.py pipeline.py paths.py i18n.py icons.py updater.py keyboard_hook.py
+
+      - name: i18n coverage
+        run: |
+          python -c "import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
+
+      - name: Icon generation
+        run: python icons.py
+
+      - name: Pipeline selftest (only when models are present)
+        shell: pwsh
+        run: |
+          if (Test-Path "models/qwen3-asr-0.6B/encoder.int8.onnx") {
+            python pipeline.py
+          } else {
+            Write-Host "models/ not in CI checkout - skipping ASR roundtrip"
+          }
