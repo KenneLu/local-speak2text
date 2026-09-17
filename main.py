@@ -19,13 +19,14 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, font as tkfont
+from tkinter import filedialog, font as tkfont, messagebox
+import winreg
 
 import pystray
 from PIL import Image, ImageDraw
 
 import i18n
-from paths import APP_NAME, VERSION, process_pending_update
+from paths import APP_NAME, RUN_DIR, VERSION, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
 from pipeline import (
@@ -36,6 +37,7 @@ from pipeline import (
     Pipeline,
     load_config,
     set_auto_gain,
+    run_benchmark,
 )
 
 WINDOW_WIDTH = 680
@@ -63,6 +65,45 @@ def dprint(*args):
         print(*args, flush=True)
 
 
+def crash_log(text):
+    """崩溃兜底：任何线程的未捕获异常都落到用户数据区 crash.log。
+
+    --noconsole 打包后 stderr 不存在，没有这个文件闪退就无迹可寻。
+    """
+    try:
+        from paths import USER_DATA_DIR
+
+        USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(USER_DATA_DIR / "crash.log", "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text.rstrip() + "\n")
+    except OSError:
+        pass
+
+
+def _install_excepthooks():
+    """主线程 + 所有线程的未捕获异常：写 crash_log（打包后这才是唯一可见出口）。"""
+
+    def dump(kind, exc, tb):
+        import traceback
+
+        crash_log("%s: %s\n%s" % (kind, exc, "".join(traceback.format_exception(exc))))
+
+    old_sys = sys.excepthook
+
+    def sys_hook(t, v, tb):
+        dump("sys.excepthook", v, tb)
+        old_sys(t, v, tb)
+    sys.excepthook = sys_hook
+
+    def thread_hook(args):
+        dump("thread %s" % getattr(args, "name", "?"), args.exc_value, None)
+        old_thread = threading.excepthook
+        # 不链旧钩子：默认行为是打印到不存在的 stderr
+    threading.excepthook = lambda args: dump(
+        "thread %s" % getattr(args, "name", "?"), args.exc_value, None
+    )
+
+
 # ---------- 配置 ----------
 
 def load_config_dict():
@@ -82,6 +123,13 @@ def save_config_dict(cfg):
 
 def get_autostart_cmd():
     if getattr(sys, "frozen", False):
+        # 打包实例：自启指向稳定安装位（若本 exe 就是从那里启动的，两者相同）。
+        # 开发态 exe（比如用户直接在 release 目录试用）启动时，仍注册稳定位——
+        # 那里将来由更新器安装正式版；稳定位还没有 exe 时退回注册当前路径。
+        from paths import INSTALL_EXE, is_stable_install
+
+        if is_stable_install() or INSTALL_EXE.exists():
+            return '"%s"' % str(INSTALL_EXE)
         return '"%s"' % os.path.abspath(sys.executable)
     pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     script = os.path.abspath(__file__)
@@ -99,6 +147,26 @@ def is_autostart_enabled():
         return False
     except OSError:
         return False
+
+
+def migrate_autostart():
+    """自启键指向的 exe 若已不存在（旧时间戳包/版本目录被删），重写到当前 exe。
+
+    历史：1.1.2 之前注册的是 out\\<时间戳>\\<工具名>-<版本>.exe——包一删就断链。
+    现在正式实例的"家"是稳定安装位 INSTALL_DIR，更新器装新版本写那里，路径永不变。
+    """
+    try:
+        current = os.path.abspath(sys.executable) if getattr(sys, "frozen", False) else None
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as k:
+            value, _ = winreg.QueryValueEx(k, APP_NAME)
+        wanted = '"%s"' % current
+        if value != wanted and not os.path.exists(value.strip('"')):
+            set_autostart(True)
+            dprint("autostart migrated:", value, "->", wanted)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
 
 
 def set_autostart(enabled):
@@ -154,6 +222,10 @@ class Tray:
             ),
             pystray.MenuItem(i18n.t("menu_choose_model"), self._choose_model),
             pystray.MenuItem(i18n.t("menu_language"), self._toggle_language),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(i18n.t("menu_help"), self._show_help),
+            pystray.MenuItem(i18n.t("menu_copy_model_prompt"), self._copy_model_prompt),
+            pystray.MenuItem(i18n.t("menu_benchmark"), self._start_benchmark),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(i18n.t("menu_check_update"), self._check_update),
             pystray.MenuItem(
@@ -250,8 +322,18 @@ class Tray:
     def _choose_model(self, icon, item):
         self.controller.ui_q.put(("choose_model",))
 
+    def _show_help(self, icon, item):
+        self.controller.ui_q.put(("help",))
+
+    def _copy_model_prompt(self, icon, item):
+        self.controller.ui_q.put(("copy_model_prompt",))
+
+    def _start_benchmark(self, icon, item):
+        self.controller.ui_q.put(("benchmark_start",))
+
     def _quit(self, icon, item):
-        self.controller.ui_q.put(("exit",))
+        # 托盘点「退出」不直接退：走 UI 线程的二次确认（队列封送）
+        self.controller.ui_q.put(("quit_confirm",))
 
 
 # ---------- 浮窗 ----------
@@ -414,6 +496,8 @@ class Controller:
         self.exit_requested = False
         self.tray = None
         self.update_cmd_path = None
+        self._bench_running = False
+        self._bench_win = None
         self.hook = KeyboardHook(on_down=self._on_down, on_up=self._on_up)
 
     # ---------- 键盘钩子 ----------
@@ -577,9 +661,188 @@ class Controller:
                 self.notify(i18n.t("update_ready_restart"))
             except Exception as e:
                 self.notify(i18n.t("update_download_fail") % e)
+        elif kind == "help":
+            self._show_help_dialog()
+        elif kind == "copy_model_prompt":
+            self._copy_model_prompt()
+        elif kind == "benchmark_start":
+            self._start_benchmark()
+        elif kind == "benchmark_progress":
+            self._bench_progress(ev[1], ev[2])
+        elif kind == "benchmark_done":
+            self._bench_done(ev[1])
+        elif kind == "quit_confirm":
+            self._confirm_quit()
         elif kind == "exit":
             self.exit_requested = True
             self.overlay.root.quit()
+
+    def _show_help_dialog(self):
+        top = tk.Toplevel(self.overlay.root)
+        top.title(i18n.t("help_title"))
+        top.geometry("660x520")
+        top.attributes("-topmost", True)
+        txt = tk.Text(top, wrap="word", font=("Microsoft YaHei", 10),
+                      bd=0, highlightthickness=0, insertwidth=0)
+        txt.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+        txt.insert("1.0", i18n.t("help_body"))
+        txt.config(state="disabled")
+        top.update_idletasks()
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        top.geometry("+%d+%d" % ((sw - 660) // 2, max(40, (sh - 520) // 3)))
+        btn = tk.Button(top, text=i18n.t("help_close"), command=top.destroy, width=12)
+        btn.pack(pady=(0, 10))
+
+    def _copy_model_prompt(self):
+        body = i18n.t("copy_prompt_body").replace(
+            "<MODELS_DIR>", os.path.join(RUN_DIR, "models"))
+        try:
+            import pyperclip
+            pyperclip.copy(body)
+            self.notify(i18n.t("copy_prompt_copied"))
+        except Exception as e:
+            self.notify(i18n.t("copy_prompt_fail") % e)
+
+    def _start_benchmark(self):
+        if self._bench_running:
+            return
+        self._bench_running = True
+        win = tk.Toplevel(self.overlay.root)
+        win.title(i18n.t("bench_title"))
+        win.geometry("420x180")
+        win.attributes("-topmost", True)
+        lbl = tk.Label(win, text=i18n.t("bench_running"),
+                       font=("Microsoft YaHei", 10), justify="left", anchor="w")
+        lbl.pack(fill="both", expand=True, padx=14, pady=14)
+        win.update_idletasks()
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry("+%d+%d" % ((sw - 420) // 2, max(40, (sh - 180) // 3)))
+        self._bench_win = win
+
+        def progress_cb(kind, name):
+            self.ui_q.put(("benchmark_progress", kind, name))
+
+        def worker():
+            try:
+                result = run_benchmark(os.path.join(RUN_DIR, "models"), progress_cb)
+            except Exception as e:
+                result = {"error": str(e)}
+            self.ui_q.put(("benchmark_done", result))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _bench_progress(self, kind, name):
+        if self._bench_win is not None and self._bench_win.winfo_exists():
+            try:
+                kids = self._bench_win.winfo_children()
+                if kids:
+                    kids[0].config(text=i18n.t("bench_working") % name)
+            except Exception:
+                pass
+
+    def _bench_done(self, result):
+        self._bench_running = False
+        win = self._bench_win
+        was_open = False
+        if win is not None:
+            try:
+                was_open = bool(win.winfo_exists())
+                if was_open:
+                    win.destroy()
+            except Exception:
+                was_open = False
+            self._bench_win = None
+        if result.get("error"):
+            self._bench_show_error(result)
+            return
+        if not was_open:
+            # 用户提前关了进度窗：完成后主动弹出结果窗（需求明确要求）
+            pass
+        self._show_bench_result(result)
+
+    def _bench_show_error(self, result):
+        if result.get("error") == "no_audio":
+            messagebox.showinfo(i18n.t("bench_title"), i18n.t("bench_no_audio"))
+        else:
+            messagebox.showerror(i18n.t("bench_title"),
+                                 i18n.t("bench_failed") % result.get("error"))
+
+    def _show_bench_result(self, result):
+        top = tk.Toplevel(self.overlay.root)
+        top.title(i18n.t("bench_result_title"))
+        top.attributes("-topmost", True)
+        cols = ("model", "type", "load", "rtf_short", "rtf_long", "verdict")
+        heads = (i18n.t("bench_col_model"), i18n.t("bench_col_type"),
+                 i18n.t("bench_col_load"), i18n.t("bench_col_rtf_short"),
+                 i18n.t("bench_col_rtf_long"), i18n.t("bench_col_verdict"))
+        try:
+            from tkinter import ttk
+            frame = tk.Frame(top)
+            frame.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+            tree = ttk.Treeview(frame, columns=cols, show="headings", height=len(result["results"]))
+            for cid, head in zip(cols, heads):
+                tree.heading(cid, text=head)
+            widths = (200, 90, 70, 80, 80, 80)
+            for cid, w in zip(cols, widths):
+                tree.column(cid, width=w, anchor="w")
+            for r in result["results"]:
+                if not r["ok"]:
+                    verdict = i18n.t("bench_verdict_fail")
+                elif r["rtf_long"] >= 1.0:
+                    verdict = i18n.t("bench_verdict_slow")
+                else:
+                    verdict = i18n.t("bench_verdict_ok")
+                tree.insert("", "end", values=(
+                    r["name"], r["type"], r["load_s"],
+                    r["rtf_short"], r["rtf_long"], verdict))
+            tree.pack(fill="both", expand=True)
+        except Exception:
+            pass
+        info = i18n.t("bench_audio_info") % (result.get("audio_sec", 0), result.get("long_sec", 0))
+        if result.get("reco"):
+            info += "\n" + i18n.t("bench_reco") % result["reco"]
+        else:
+            info += "\n" + i18n.t("bench_reco_none")
+        lbl = tk.Label(top, text=info, font=("Microsoft YaHei", 10), justify="left", anchor="w")
+        lbl.pack(fill="x", padx=10)
+        expl = tk.Label(top, text=i18n.t("bench_explain"), font=("Microsoft YaHei", 9),
+                        fg="#5F6B76", justify="left", anchor="w")
+        expl.pack(fill="x", padx=10, pady=(6, 2))
+        btn = tk.Button(top, text=i18n.t("help_close"), command=top.destroy, width=12)
+        btn.pack(pady=(2, 10))
+        top.update_idletasks()
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        top.geometry("+%d+%d" % ((sw - 640) // 2, max(30, (sh - 480) // 3)))
+
+    def _confirm_quit(self):
+        """退出二次确认：用户点了确认才真正退出；关窗/取消都不退出。"""
+        top = tk.Toplevel(self.overlay.root)
+        top.title(i18n.t("quit_confirm_title"))
+        top.resizable(False, False)
+        top.attributes("-topmost", True)
+        lbl = tk.Label(top, text=i18n.t("quit_confirm_body"),
+                       font=("Microsoft YaHei", 10), justify="left")
+        lbl.pack(padx=18, pady=(16, 10))
+        btns = tk.Frame(top)
+        btns.pack(pady=(0, 14))
+
+        def do_quit():
+            top.destroy()
+            self.ui_q.put(("exit",))
+
+        def cancel():
+            top.destroy()
+
+        yes = tk.Button(btns, text=i18n.t("quit_confirm_yes"), command=do_quit,
+                        width=10, bg="#E5534B", fg="#FFFFFF", relief="flat")
+        no = tk.Button(btns, text=i18n.t("quit_confirm_no"), command=cancel, width=10)
+        yes.pack(side="left", padx=8)
+        no.pack(side="left", padx=8)
+        no.focus_set()
+        top.protocol("WM_DELETE_WINDOW", cancel)
+        top.update_idletasks()
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        top.geometry("+%d+%d" % ((sw - top.winfo_width()) // 2, (sh - top.winfo_height()) // 2))
+        top.grab_set()  # 模态：确认期间托盘重复点击不会再叠加弹窗
 
     def _set_recording(self, recording):
         if self.on_state_change:
@@ -622,8 +885,10 @@ def type_text(text):
 
 
 def main():
+    _install_excepthooks()
     i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     process_pending_update()
+    migrate_autostart()
     overlay = Overlay()
     ctrl = Controller(overlay, None)
     tray = Tray(ctrl)

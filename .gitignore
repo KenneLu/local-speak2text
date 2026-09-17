@@ -10,8 +10,7 @@ out/
 __pycache__/
 *.pyc
 
-# user data (config now lives in %LOCALAPPDATA%, but keep legacy copies out)
-config.json
+# diagnostics (keep the template config.json in git; user config lives in AppData)
 smoke.log
 *.log
 

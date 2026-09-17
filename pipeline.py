@@ -13,6 +13,7 @@ import queue
 import sys
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import sherpa_onnx
@@ -57,6 +58,20 @@ def _resolve_model_dir(value):
     return os.path.normpath(os.path.join(BASE_DIR, value))
 
 
+def _find_existing_model_dir(configured):
+    """模型目录解析：配置值优先；不存在则向上层目录查找（release 包在仓库内时，
+    配置的相对 models/ 在 exe 旁不存在，但仓库根有）。最后回退内置两个已知模型。"""
+    candidates = [configured]
+    here = Path(BASE_DIR)
+    for parent in [here] + list(here.parents)[:3]:
+        candidates.append(str(parent / "models" / "qwen3-asr-0.6B"))
+        candidates.append(str(parent / "models" / "sensevoice-small-int8"))
+    for cand in candidates:
+        if cand and os.path.isdir(cand) and os.path.isdir(cand):
+            return cand
+    return configured
+
+
 def load_config():
     global AUTO_GAIN, SEGMENT_PADDING, VAD_FLOOR, MODEL_DIR, MODEL_NAME, NUM_THREADS_CFG
     try:
@@ -65,7 +80,7 @@ def load_config():
         AUTO_GAIN = bool(cfg.get("auto_gain", True))
         SEGMENT_PADDING = float(cfg.get("segment_padding", 0.15))
         VAD_FLOOR = float(cfg.get("vad_floor", 0.005))
-        MODEL_DIR = _resolve_model_dir(cfg.get("model_dir"))
+        MODEL_DIR = _find_existing_model_dir(_resolve_model_dir(cfg.get("model_dir")))
         MODEL_NAME = os.path.basename(os.path.normpath(MODEL_DIR))
         NUM_THREADS_CFG = max(1, int(cfg.get("num_threads", NUM_THREADS)))
     except Exception:
@@ -116,6 +131,107 @@ def _detect_model_type(model_dir):
     if any(f.startswith("model.int8.onnx") or f == "model.onnx" for f in files) and has("tokens.txt"):
         return "paraformer"
     return "qwen3_asr"
+
+
+# 各类型模型必需的文件（用于严格校验，防止把不完整目录当 qwen3 默认类型）
+MODEL_REQUIREMENTS = {
+    "qwen3_asr": ("conv_frontend.onnx", "encoder.int8.onnx", "decoder.int8.onnx", "tokenizer"),
+    "sense_voice": ("model.int8.onnx", "tokens.txt"),
+    "fire_red_asr": ("encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"),
+    "paraformer": ("model.int8.onnx", "tokens.txt"),
+}
+
+
+def _model_dir_complete(model_dir, mtype):
+    """目录是否具备该类型必需的文件（qwen3 的 tokenizer 是子目录，单独判）。"""
+    try:
+        files = {f.lower() for f in os.listdir(model_dir)}
+    except OSError:
+        return False
+    for req in MODEL_REQUIREMENTS[mtype]:
+        if req == "tokenizer":
+            if "tokenizer" not in files:
+                return False
+        elif not any(f == req or f.startswith(req) for f in files):
+            return False
+    return True
+
+
+def iter_model_dirs(models_dir):
+    """枚举 models 下可用的模型目录，返回 [(名称, 完整路径, 类型)]。"""
+    out = []
+    try:
+        entries = sorted(os.listdir(models_dir))
+    except OSError:
+        return out
+    for name in entries:
+        d = os.path.join(models_dir, name)
+        if not os.path.isdir(d):
+            continue
+        t = _detect_model_type(d)
+        if t in MODEL_REQUIREMENTS and _model_dir_complete(d, t):
+            out.append((name, d, t))
+    return out
+
+
+def find_bench_audio(models_dir):
+    """找一段测试音频：优先 models\\test_zh.wav，其次 models 下任意 .wav。"""
+    first = os.path.join(models_dir, "test_zh.wav")
+    if os.path.exists(first):
+        return first
+    for root, _dirs, files in os.walk(models_dir):
+        for f in sorted(files):
+            if f.lower().endswith(".wav"):
+                return os.path.join(root, f)
+    return None
+
+
+def run_benchmark(models_dir, progress=lambda kind, name: None):
+    """性能检测核心（无 UI）：对 models 下每个模型测加载/短句/长音频。
+
+    progress(kind, name)  kind ∈ {"load", "decode"}
+    返回 {"audio_sec", "results": [...], "reco": 名或""}；无音频时 {"error": "no_audio"}。
+    """
+    import wave
+
+    audio_path = find_bench_audio(models_dir)
+    if not audio_path:
+        return {"error": "no_audio"}
+    with wave.open(audio_path, "rb") as w:
+        assert w.getnchannels() == 1 and w.getsampwidth() == 2
+        data = w.readframes(w.getnframes())
+    seg = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+    audio_sec = len(seg) / SAMPLE_RATE
+    long_audio = np.concatenate([seg] * 3) if audio_sec < 10 else seg
+    long_sec = len(long_audio) / SAMPLE_RATE
+
+    results = []
+    for name, d, mtype in iter_model_dirs(models_dir):
+        progress("load", name)
+        t0 = time.perf_counter()
+        eng = AsrEngine(model_dir=d)
+        load_s = time.perf_counter() - t0
+        try:
+            progress("decode", name)
+            eng.recognize(seg)  # 预热
+            t0 = time.perf_counter()
+            txt_short = eng.recognize(seg)
+            dt_short = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            txt_long = eng.recognize(long_audio)
+            dt_long = time.perf_counter() - t0
+            results.append({
+                "name": name, "type": mtype, "load_s": round(load_s, 1),
+                "rtf_short": round(dt_short / audio_sec, 3),
+                "rtf_long": round(dt_long / long_sec, 3),
+                "chars": len(txt_short), "ok": bool(txt_short.strip()),
+            })
+        finally:
+            del eng
+    usable = [r for r in results if r["ok"] and r["rtf_long"] < 1.0]
+    reco = min(usable, key=lambda r: r["rtf_long"])["name"] if usable else ""
+    return {"audio_sec": round(audio_sec, 1), "long_sec": round(long_sec, 1),
+            "results": results, "reco": reco}
 
 
 def perf_log(msg):

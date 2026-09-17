@@ -121,28 +121,33 @@ def download_update(config_path, latest, log=print):
 
 
 def prepare_update_cmd(staged_dir):
-    """下载解包完成后调用：生成退出时执行的一次性替换脚本，返回脚本路径。
+    """下载解包完成后调用：生成退出时执行的一次性安装脚本，返回脚本路径。
 
+    目标是稳定安装位 INSTALL_DIR（自启注册表指向的路径，永不变）：
     用户退出托盘 -> main() finally 里 start 该脚本 -> 等本进程退出 ->
-    robocopy 整目录替换 -> 启动新 exe。
+    robocopy 整目录镜像到 INSTALL_DIR -> 从 INSTALL_DIR 启动新 exe。
+    首次安装时 INSTALL_DIR 还不存在，脚本先 mkdir 再 robocopy。
     """
     os.makedirs(UPDATE_DIR, exist_ok=True)
     exe = os.path.join(staged_dir, APP_ID_PKG + ".exe")
     if not os.path.exists(exe):
         raise RuntimeError("staged exe missing: " + exe)
+    from paths import INSTALL_DIR, INSTALL_EXE
+
     UPDATE_PENDING.write_text(
-        json.dumps({"staged": staged_dir, "target": str(APP_DIR)}, ensure_ascii=False),
+        json.dumps({"staged": staged_dir, "target": str(INSTALL_DIR)}, ensure_ascii=False),
         encoding="utf-8",
     )
     cmd_path = os.path.join(UPDATE_DIR, "apply.cmd")
     script = (
         "@echo off\r\n"
+        "if not exist \"%TARGET%\" mkdir \"%TARGET%\"\r\n"
         "timeout /t 2 /nobreak >nul\r\n"
         "robocopy \"%STAGED%\" \"%TARGET%\" /MIR /R:1 /W:1 /NFL /NDL /NP >nul\r\n"
         "del \"%APPDATA_MARK%\"\r\n"
         "start \"\" \"%NEWEXE%\"\r\n"
         "del \"%~f0\"\r\n"
-    ).replace("%STAGED%", staged_dir).replace("%TARGET%", str(APP_DIR)).replace("%APPDATA_MARK%", str(UPDATE_PENDING)).replace("%NEWEXE%", exe)
+    ).replace("%STAGED%", staged_dir).replace("%TARGET%", str(INSTALL_DIR)).replace("%APPDATA_MARK%", str(UPDATE_PENDING)).replace("%NEWEXE%", str(INSTALL_EXE))
     with open(cmd_path, "w", encoding="ascii") as f:
         f.write(script)
     return cmd_path

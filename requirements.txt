@@ -1,0 +1,6 @@
+numpy
+sherpa-onnx
+sounddevice
+pystray
+pillow
+pyperclip

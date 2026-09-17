@@ -16,7 +16,7 @@ from pathlib import Path
 
 APP_ID = "local-speak2text"
 APP_NAME = "LocalSpeak2Text"
-VERSION = "1.1.0"
+VERSION = "1.1.3"
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
@@ -42,8 +42,23 @@ LOG_PATH = LOG_DIR / (APP_ID + ".log")
 UPDATE_DIR = USER_DATA_DIR / "update"
 UPDATE_PENDING = RUN_DIR / "update.pending.json"
 
+# 稳定安装位：正式（打包）实例的"家"。开机自启注册表指向这里，永远不因版本
+# 更新而失效——更新器把新版装到 INSTALL_DIR（整目录替换），exe 路径不变。
+# 开发态（源码运行）没有"安装"概念，is_stable_install() 恒为 False，
+# 自启退回注册当前 exe 的实际路径。
+INSTALL_DIR = USER_DATA_DIR / "app"
+INSTALL_EXE = INSTALL_DIR / f"{APP_ID}.exe"
+
 TRAY_ICON_PATH = RUN_DIR / f"{APP_ID}.ico"
 TASKBAR_ICON_PATH = RUN_DIR / f"{APP_ID}-taskbar.ico"
+
+
+def is_stable_install():
+    """当前 exe 是否就是稳定安装位里的那个（即用户通过更新器安装的正式实例）。"""
+    try:
+        return Path(sys.executable).resolve() == INSTALL_EXE.resolve()
+    except OSError:
+        return False
 
 
 def ensure_user_dirs():
