@@ -3,6 +3,21 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.2.0
+
+- Single instance: a named mutex prevents a second tray instance from grabbing
+  the keyboard hook and the audio device; a message box points to the running
+  instance. Set `LST_ALLOW_MULTI=1` to bypass for tests.
+- Rotating run log at `%LOCALAPPDATA%\local-speak2text\log\local-speak2text.log`
+  (1 MB × 3 backups, reme-helper style) recording startup, model load, crashes
+  and exit; new tray item "打开日志目录 / Open log folder".
+- Tray menu restructured to the house standard (read-only info header on top,
+  updates, business, open, preferences, quit last); "Guide..." is now the
+  double-click default action.
+- Fix: the updater referenced an undefined `APP_ID_PKG`, so downloading an
+  update crashed with NameError before any file was written (regression from
+  1.1.0's updater).
+
 ## 1.1.3
 
 - Stable install location: in-place updates now install into

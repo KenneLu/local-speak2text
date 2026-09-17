@@ -26,7 +26,8 @@ import pystray
 from PIL import Image, ImageDraw
 
 import i18n
-from paths import APP_NAME, RUN_DIR, VERSION, process_pending_update
+import log_kit
+from paths import APP_ID, APP_NAME, RUN_DIR, VERSION, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
 from pipeline import (
@@ -86,7 +87,9 @@ def _install_excepthooks():
     def dump(kind, exc, tb):
         import traceback
 
-        crash_log("%s: %s\n%s" % (kind, exc, "".join(traceback.format_exception(exc))))
+        text = "%s: %s\n%s" % (kind, exc, "".join(traceback.format_exception(exc)))
+        crash_log(text)
+        log_kit.log("CRASH " + text.splitlines()[0])
 
     old_sys = sys.excepthook
 
@@ -102,6 +105,45 @@ def _install_excepthooks():
     threading.excepthook = lambda args: dump(
         "thread %s" % getattr(args, "name", "?"), args.exc_value, None
     )
+
+
+# ---------- 单实例 ----------
+
+MUTEX_NAME = r"Local\%s\SingleInstance" % APP_ID
+ERROR_ALREADY_EXISTS = 183
+_MUTEX_HANDLE = None
+
+
+def acquire_single_instance():
+    """命名互斥体保证只有一个托盘实例（house 标准，同 reme-helper）。
+
+    双开会抢键盘钩子和音频设备，还会各写一份配置。测试/特殊场景设
+    LST_ALLOW_MULTI=1 可跳过。返回 False 表示已有实例在跑。
+    """
+    global _MUTEX_HANDLE
+    if os.environ.get("LST_ALLOW_MULTI") == "1":
+        return True
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if not handle or ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        if handle:
+            kernel32.CloseHandle(handle)
+        return False
+    _MUTEX_HANDLE = handle
+    return True
+
+
+def warn_duplicate_instance():
+    """重复启动提示：托盘里已经有一个在跑，本实例直接退出。"""
+    import ctypes
+
+    ctypes.windll.user32.MessageBoxW(
+        0, "%s 已在运行：请使用托盘里的那个实例。" % APP_NAME, APP_NAME, 0x40)
 
 
 # ---------- 配置 ----------
@@ -201,6 +243,7 @@ class Tray:
     def __init__(self, controller):
         self.controller = controller
         self.update_ready = None  # (latest,) 下载就绪前=可更新版本；None=无更新
+        self.status_text = i18n.t("tray_loading") % APP_NAME  # 菜单第①段信息行
         self.icon = pystray.Icon(
             APP_NAME,
             make_icon_image(),
@@ -209,24 +252,13 @@ class Tray:
         )
 
     def _build_menu(self):
+        """house 标准八段式（执行文档 D14）：信息 → 更新 → 默认入口 → 业务 → 打开 → 偏好 → 退出。"""
         return pystray.Menu(
-            pystray.MenuItem(
-                i18n.t("menu_autostart"),
-                self._toggle_autostart,
-                checked=lambda item: is_autostart_enabled(),
-            ),
-            pystray.MenuItem(
-                i18n.t("menu_gain"),
-                self._toggle_gain,
-                checked=lambda item: bool(load_config_dict().get("auto_gain", True)),
-            ),
-            pystray.MenuItem(i18n.t("menu_choose_model"), self._choose_model),
-            pystray.MenuItem(i18n.t("menu_language"), self._toggle_language),
+            # ① 信息区（只读）
+            pystray.MenuItem(lambda _item: "%s v%s" % (APP_NAME, VERSION), None, enabled=False),
+            pystray.MenuItem(lambda _item: self.status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(i18n.t("menu_help"), self._show_help),
-            pystray.MenuItem(i18n.t("menu_copy_model_prompt"), self._copy_model_prompt),
-            pystray.MenuItem(i18n.t("menu_benchmark"), self._start_benchmark),
-            pystray.Menu.SEPARATOR,
+            # ② 更新区
             pystray.MenuItem(i18n.t("menu_check_update"), self._check_update),
             pystray.MenuItem(
                 i18n.t("menu_update_now"),
@@ -234,6 +266,31 @@ class Tray:
                 enabled=lambda item: self.update_ready is not None,
             ),
             pystray.Menu.SEPARATOR,
+            # ③ 默认入口（双击托盘）：使用指引
+            pystray.MenuItem(i18n.t("menu_help"), self._show_help, default=True),
+            pystray.Menu.SEPARATOR,
+            # ④ 业务区
+            pystray.MenuItem(
+                i18n.t("menu_gain"),
+                self._toggle_gain,
+                checked=lambda item: bool(load_config_dict().get("auto_gain", True)),
+            ),
+            pystray.MenuItem(i18n.t("menu_choose_model"), self._choose_model),
+            pystray.MenuItem(i18n.t("menu_benchmark"), self._start_benchmark),
+            pystray.MenuItem(i18n.t("menu_copy_model_prompt"), self._copy_model_prompt),
+            pystray.Menu.SEPARATOR,
+            # ⑤ 打开区
+            pystray.MenuItem(i18n.t("menu_open_logs"), self._open_logs),
+            pystray.Menu.SEPARATOR,
+            # ⑥ 偏好区
+            pystray.MenuItem(
+                i18n.t("menu_autostart"),
+                self._toggle_autostart,
+                checked=lambda item: is_autostart_enabled(),
+            ),
+            pystray.MenuItem(i18n.t("menu_language"), self._toggle_language),
+            pystray.Menu.SEPARATOR,
+            # ⑦ 退出（恒最后）
             pystray.MenuItem(i18n.t("menu_quit"), self._quit),
         )
 
@@ -260,6 +317,7 @@ class Tray:
             pass
 
     def set_title(self, text):
+        self.status_text = text  # 同步到菜单第①段信息行
         try:
             self.icon.title = text
         except Exception:
@@ -330,6 +388,9 @@ class Tray:
 
     def _start_benchmark(self, icon, item):
         self.controller.ui_q.put(("benchmark_start",))
+
+    def _open_logs(self, icon, item):
+        log_kit.open_log_dir()
 
     def _quit(self, icon, item):
         # 托盘点「退出」不直接退：走 UI 线程的二次确认（队列封送）
@@ -886,9 +947,13 @@ def type_text(text):
 
 def main():
     _install_excepthooks()
+    if not acquire_single_instance():
+        warn_duplicate_instance()
+        return 0
     i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     process_pending_update()
     migrate_autostart()
+    log_kit.log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
     overlay = Overlay()
     ctrl = Controller(overlay, None)
     tray = Tray(ctrl)
@@ -904,6 +969,7 @@ def main():
         engine = AsrEngine()
     except Exception as e:
         dprint("model load failed:", e)
+        log_kit.log("model load failed: %s" % e)
         tray.set_title(i18n.t("tray_load_failed") % APP_NAME)
         tray.notify(i18n.t("notify_load_failed"))
     else:
@@ -911,6 +977,7 @@ def main():
         ctrl.hook_started = ctrl.hook.start()
         tray.set_title(i18n.t("tray_ready") % (APP_NAME, engine.model_type))
         tray.notify(i18n.t("notify_ready") % engine.model_type)
+        log_kit.log("model ready: %s" % engine.model_type)
 
     # 启动后后台节流检查更新（有配置 update_repo 才生效），有新版弹通知并点亮菜单
     def _startup_update_check():
@@ -924,6 +991,7 @@ def main():
     try:
         overlay.root.mainloop()
     finally:
+        log_kit.log("exit")
         if ctrl.update_cmd_path:
             os.system('start "" /min "%s"' % ctrl.update_cmd_path)
         ctrl.hook.stop()

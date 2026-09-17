@@ -14,7 +14,7 @@ import time
 import urllib.request
 import zipfile
 
-from paths import APP_DIR, UPDATE_DIR, UPDATE_PENDING, VERSION
+from paths import APP_DIR, APP_ID, UPDATE_DIR, UPDATE_PENDING, VERSION
 
 CHECK_INTERVAL = 24 * 3600
 STATE = {"checked_for": "", "latest": "", "at": 0.0, "asset_url": "", "asset_size": 0}
@@ -101,7 +101,7 @@ def download_update(config_path, latest, log=print):
     if not repo:
         raise RuntimeError("no update_repo configured")
     base = f"https://github.com/{repo}/releases/download/v{latest}"
-    stem = f"{APP_ID_PKG}-{latest}-windows-x64"
+    stem = f"{APP_ID}-{latest}-windows-x64"
     zip_path = os.path.join(UPDATE_DIR, stem + ".zip")
     sha_path = zip_path + ".sha256"
     log("downloading", stem)
@@ -117,7 +117,7 @@ def download_update(config_path, latest, log=print):
         log("no sha256 file, skip verify")
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(UPDATE_DIR)
-    return os.path.join(UPDATE_DIR, APP_ID_PKG)
+    return os.path.join(UPDATE_DIR, APP_ID)
 
 
 def prepare_update_cmd(staged_dir):
@@ -129,7 +129,7 @@ def prepare_update_cmd(staged_dir):
     首次安装时 INSTALL_DIR 还不存在，脚本先 mkdir 再 robocopy。
     """
     os.makedirs(UPDATE_DIR, exist_ok=True)
-    exe = os.path.join(staged_dir, APP_ID_PKG + ".exe")
+    exe = os.path.join(staged_dir, APP_ID + ".exe")
     if not os.path.exists(exe):
         raise RuntimeError("staged exe missing: " + exe)
     from paths import INSTALL_DIR, INSTALL_EXE
