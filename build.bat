@@ -79,7 +79,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 2: i18n coverage - zh/en tables must answer the core keys
 rem ---------------------------------------------------------------------------
 echo [TEST] i18n coverage ...
-"%PY%" -c "import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
+"%PY%" -c "from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
 if errorlevel 1 (
   echo [ERROR] i18n check failed.
   if not defined NOPAUSE pause
@@ -112,7 +112,7 @@ rem ---------------------------------------------------------------------------
 rem PyInstaller onedir noconsole
 rem ---------------------------------------------------------------------------
 echo [BUILD] PyInstaller onedir noconsole ...
-"%PY%" -m PyInstaller --noconfirm --clean --onedir --noconsole ^
+"%PY%" -m PyInstaller --paths "%CD%\src" --noconfirm --clean --onedir --noconsole ^
   --name %APPNAME% ^
   --icon "%CD%\%APPNAME%-taskbar.ico" ^
   --add-data "%CD%\%APPNAME%.ico;." ^

@@ -5,5 +5,5 @@
   "num_threads": 8,
   "language": "auto",
   "update_repo": "KenneLu/local-speak2text",
-  "model_dir": "models/qwen3-asr-0.6B"
+  "model_dir": "asr-modules/sensevoice-small-int8"
 }

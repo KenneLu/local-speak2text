@@ -31,7 +31,7 @@ jobs:
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
       # roundtrip runs only where asr-modules/ exists (local machine).
       - name: Compile check
-        run: python -m py_compile main.py pipeline.py paths.py modules/i18n.py icons.py updater.py keyboard_hook.py log_kit.py
+        run: python -m py_compile main.py pipeline.py paths.py src/modules/i18n/i18n.py icons.py updater.py keyboard_hook.py log_kit.py
 
       - name: i18n coverage
         run: |

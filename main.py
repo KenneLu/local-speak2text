@@ -25,7 +25,8 @@ import winreg
 import pystray
 from PIL import Image, ImageDraw
 
-from modules import i18n
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))   # src/modules 布局引导
+from modules import i18n   # noqa: E402
 import log_kit
 from paths import APP_ID, APP_NAME, RUN_DIR, VERSION, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
