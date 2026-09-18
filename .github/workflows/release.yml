@@ -55,7 +55,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $line = Select-String -Path paths.py -Pattern '^VERSION = ' | Select-Object -First 1
+          $line = Select-String -Path src/paths.py -Pattern '^VERSION = ' | Select-Object -First 1
           if (-not $line) { throw "VERSION not found in paths.py" }
           $version = ($line.Line -split '"')[1]
           "version=$version" >> $env:GITHUB_OUTPUT
