@@ -2,7 +2,7 @@
 """退出确认弹窗：点「退出」应弹确认窗；点取消不退出；点确认才发 exit。"""
 import sys
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
+sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
 from modules import i18n
 import main as M
 

@@ -2,7 +2,7 @@
 """浮窗自动生长自动化测试：验证高度随内容增长、向上生长不超屏、始终滚到最新。"""
 import sys
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
+sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
 import main as M
 
 ov = M.Overlay()

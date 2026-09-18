@@ -4,7 +4,7 @@ import os
 import sys
 import winreg
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
+sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
 os.chdir(r"H:\Tools\my_diy_tools\local-speak2text")
 import main as M
 

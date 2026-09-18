@@ -2,7 +2,7 @@
 """Help 弹窗 + 复制提示词（内容断言，不落剪贴板）+ 英文模式文案完整性。"""
 import sys
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
+sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
 from modules import i18n
 import main as M
 

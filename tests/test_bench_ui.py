@@ -7,7 +7,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
+sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
 from modules import i18n
 import main as M
 
