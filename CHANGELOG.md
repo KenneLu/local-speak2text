@@ -3,6 +3,14 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.3.0
+
+- i18n v2: translation tables moved out of code into data files
+  (`locales/zh.json` + `locales/en.json`, 74 entries each) - adding entries no
+  longer touches code; mechanism aligned with the family template
+  (my-diy-tool-template/modules/i18n). No user-visible behavior change.
+- Build packages now bundle the locales folder.
+
 ## 1.2.0
 
 - Single instance: a named mutex prevents a second tray instance from grabbing
