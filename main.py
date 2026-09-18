@@ -756,7 +756,7 @@ class Controller:
 
     def _copy_model_prompt(self):
         body = i18n.t("copy_prompt_body").replace(
-            "<MODELS_DIR>", os.path.join(RUN_DIR, "models"))
+            "<MODELS_DIR>", os.path.join(RUN_DIR, "asr-modules"))
         try:
             import pyperclip
             pyperclip.copy(body)
@@ -785,7 +785,7 @@ class Controller:
 
         def worker():
             try:
-                result = run_benchmark(os.path.join(RUN_DIR, "models"), progress_cb)
+                result = run_benchmark(os.path.join(RUN_DIR, "asr-modules"), progress_cb)
             except Exception as e:
                 result = {"error": str(e)}
             self.ui_q.put(("benchmark_done", result))

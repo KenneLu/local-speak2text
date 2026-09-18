@@ -24,3 +24,7 @@ local-speak2text-taskbar.ico
 # editor
 .vscode/
 .idea/
+
+# ASR 模型资源（2GB+，不入库）
+asr-modules/
+models/

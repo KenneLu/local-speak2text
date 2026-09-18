@@ -9,7 +9,7 @@ A tiny Windows tray tool: hold **Right-Ctrl** and speak — a floating window sh
 ## Install
 
 1. Download `local-speak2text-<version>-windows-x64.zip` from [Releases](../../releases) and unpack it anywhere.
-2. Download an ASR model (see [Models](#models)) into a `models\` folder next to the exe — or use your own.
+2. Download an ASR model (see [Models](#models)) into an `asr-modules\` folder - or use your own. The default model is SenseVoice-Small (int8) when present.
 3. Run `local-speak2text.exe`. It lives in the tray.
 
 ## Hotkeys
@@ -24,7 +24,7 @@ Tray menu (right-click the icon): autostart, auto gain, **choose model folder**,
 
 ## Models
 
-Drop a model folder under `models\` next to the exe — the type is auto-detected from the file layout, no config change needed:
+Drop a model folder under `asr-modules\` next to the exe — the type is auto-detected from the file layout, no config change needed:
 
 | Files in the folder | Detected as |
 |---|---|

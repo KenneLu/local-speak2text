@@ -40,7 +40,14 @@ AUTO_GAIN_MAX = 20.0          # 最大放大倍数（防止把噪声一起抬上
 
 BASE_DIR = str(APP_DIR)
 CONFIG_PATH = str(_USER_CONFIG_PATH)
-DEFAULT_MODEL_DIR = os.path.join(BASE_DIR, "models", "qwen3-asr-0.6B")
+MODELS_DIR = os.path.join(BASE_DIR, "asr-modules")            # 资源模块目录（1.4.0 起，原 models/ 自动迁移）
+LEGACY_MODELS_DIR = os.path.join(BASE_DIR, "models")
+if os.path.isdir(LEGACY_MODELS_DIR) and not os.path.isdir(MODELS_DIR):
+    try:
+        os.rename(LEGACY_MODELS_DIR, MODELS_DIR)   # 一次性迁移，用户已下载的模型不重下
+    except OSError:
+        pass
+DEFAULT_MODEL_DIR = os.path.join(MODELS_DIR, "sensevoice-small-int8")   # 默认模型：更轻、RTF 更低（1.4.0 起）
 MODEL_DIR = DEFAULT_MODEL_DIR
 MODEL_NAME = os.path.basename(MODEL_DIR)
 
@@ -64,8 +71,9 @@ def _find_existing_model_dir(configured):
     candidates = [configured]
     here = Path(BASE_DIR)
     for parent in [here] + list(here.parents)[:3]:
-        candidates.append(str(parent / "models" / "qwen3-asr-0.6B"))
-        candidates.append(str(parent / "models" / "sensevoice-small-int8"))
+        candidates.append(str(parent / "asr-modules" / "sensevoice-small-int8"))
+        candidates.append(str(parent / "asr-modules" / "qwen3-asr-0.6B"))
+        candidates.append(str(parent / "models" / "sensevoice-small-int8"))   # 1.3.x 旧位置兜底
     for cand in candidates:
         if cand and os.path.isdir(cand) and os.path.isdir(cand):
             return cand
@@ -158,7 +166,7 @@ def _model_dir_complete(model_dir, mtype):
 
 
 def iter_model_dirs(models_dir):
-    """枚举 models 下可用的模型目录，返回 [(名称, 完整路径, 类型)]。"""
+    """枚举 asr-modules 下可用的模型目录，返回 [(名称, 完整路径, 类型)]。"""
     out = []
     try:
         entries = sorted(os.listdir(models_dir))
@@ -187,7 +195,7 @@ def find_bench_audio(models_dir):
 
 
 def run_benchmark(models_dir, progress=lambda kind, name: None):
-    """性能检测核心（无 UI）：对 models 下每个模型测加载/短句/长音频。
+    """性能检测核心（无 UI）：对 asr-modules 下每个模型测加载/短句/长音频。
 
     progress(kind, name)  kind ∈ {"load", "decode"}
     返回 {"audio_sec", "results": [...], "reco": 名或""}；无音频时 {"error": "no_audio"}。
@@ -680,4 +688,4 @@ def selftest(wav_path):
 if __name__ == "__main__":
     import sys
 
-    selftest(sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "models", "test_zh.wav"))
+    selftest(sys.argv[1] if len(sys.argv) > 1 else os.path.join(MODELS_DIR, "test_zh.wav"))

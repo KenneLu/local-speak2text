@@ -32,26 +32,19 @@ jobs:
           python-version: "3.13"
           cache: pip
 
-      # Models (~2.3GB) are not in git. Download the two int8 models the app
-      # needs so the packaged smoke test does a real ASR roundtrip in CI.
-      - name: Download ASR models
+      # The default model (sensevoice-small-int8, ~1 file set) is not in git.
+      # Download it so the packaged smoke test does a real ASR roundtrip in CI.
+      - name: Download default ASR model
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path models | Out-Null
+          New-Item -ItemType Directory -Force -Path asr-modules | Out-Null
           $sv = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2"
           Invoke-WebRequest -Uri $sv -OutFile sv.tar.bz2
           tar -xjf sv.tar.bz2
-          New-Item -ItemType Directory -Force -Path models/sensevoice-small-int8 | Out-Null
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx models/sensevoice-small-int8/
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt models/sensevoice-small-int8/
-          # test clip for the pipeline-selftest gate (ships with the SV package)
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav models/test_zh.wav
-          $qwen = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2"
-          Invoke-WebRequest -Uri $qwen -OutFile qwen.tar.bz2
-          tar -xjf qwen.tar.bz2
-          New-Item -ItemType Directory -Force -Path models/qwen3-asr-0.6B/tokenizer | Out-Null
-          Copy-Item sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/*.onnx models/qwen3-asr-0.6B/
-          Copy-Item sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/tokenizer/* models/qwen3-asr-0.6B/tokenizer/
+          New-Item -ItemType Directory -Force -Path asr-modules/sensevoice-small-int8 | Out-Null
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx asr-modules/sensevoice-small-int8/
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt asr-modules/sensevoice-small-int8/
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav asr-modules/test_zh.wav
 
       - name: Install dependencies
         run: |

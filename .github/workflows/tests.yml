@@ -29,7 +29,7 @@ jobs:
       # Each gate is its own step so a failure names the gate in the UI.
       # The full pipeline selftest needs the ASR model, which is not in the
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
-      # roundtrip runs only where models/ exists (local machine).
+      # roundtrip runs only where asr-modules/ exists (local machine).
       - name: Compile check
         run: python -m py_compile main.py pipeline.py paths.py modules/i18n.py icons.py updater.py keyboard_hook.py log_kit.py
 
@@ -43,8 +43,8 @@ jobs:
       - name: Pipeline selftest (only when models are present)
         shell: pwsh
         run: |
-          if (Test-Path "models/qwen3-asr-0.6B/encoder.int8.onnx") {
+          if (Test-Path "asr-modules/sensevoice-small-int8/model.int8.onnx") {
             python pipeline.py
           } else {
-            Write-Host "models/ not in CI checkout - skipping ASR roundtrip"
+            Write-Host "asr-modules/ not in CI checkout - skipping ASR roundtrip"
           }

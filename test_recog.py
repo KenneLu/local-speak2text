@@ -9,7 +9,7 @@ import numpy as np
 import sherpa_onnx
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(BASE_DIR, "models", "qwen3-asr-0.6B")
+MODEL_DIR = os.path.join(BASE_DIR, "asr-modules", "qwen3-asr-0.6B")
 SAMPLE_RATE = 16000
 
 
@@ -43,7 +43,7 @@ def recognize(recognizer, samples, rate=SAMPLE_RATE):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "models", "test_zh.wav")
+    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "asr-modules", "test_zh.wav")
     t0 = time.time()
     recognizer = load_recognizer()
     print(f"模型加载耗时: {time.time() - t0:.1f}s")

@@ -14,7 +14,7 @@ def prog(kind, name):
     print(f"[{kind}] {name}", flush=True)
 
 
-result = P.run_benchmark(os.path.join(P.BASE_DIR, "models"), prog)
+result = P.run_benchmark(os.path.join(P.BASE_DIR, "asr-modules"), prog)
 print("audio_sec =", result["audio_sec"], "| long_sec =", result["long_sec"])
 for r in result["results"]:
     print(

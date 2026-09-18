@@ -3,7 +3,15 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
-## 1.3.1
+## 1.4.0
+
+- Model resources renamed: `models/` -> `asr-modules/` (auto-migrated once on
+  first launch; keeps downloaded models intact).
+- Default model is now SenseVoice-Small (int8) - lighter and faster RTF than
+  the 0.6B default; Qwen3 remains selectable via "Choose model folder".
+- Docs and locale strings updated to the new paths.
+
+## 1.3.1## 1.3.1
 
 - Internal structure only: i18n moved into `modules/i18n.py` (family template
   layout, data-driven tables unchanged); imports updated. No behavior change.
