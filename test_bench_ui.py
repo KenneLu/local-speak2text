@@ -8,7 +8,7 @@ import sys
 import time
 
 sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
-import i18n
+from modules import i18n
 import main as M
 
 i18n.init("zh")

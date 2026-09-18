@@ -3,6 +3,11 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.3.1
+
+- Internal structure only: i18n moved into `modules/i18n.py` (family template
+  layout, data-driven tables unchanged); imports updated. No behavior change.
+
 ## 1.3.0
 
 - i18n v2: translation tables moved out of code into data files

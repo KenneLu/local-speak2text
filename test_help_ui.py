@@ -3,7 +3,7 @@
 import sys
 
 sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text")
-import i18n
+from modules import i18n
 import main as M
 
 for lang in ("zh", "en"):

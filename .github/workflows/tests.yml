@@ -31,11 +31,11 @@ jobs:
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
       # roundtrip runs only where models/ exists (local machine).
       - name: Compile check
-        run: python -m py_compile main.py pipeline.py paths.py i18n.py icons.py updater.py keyboard_hook.py log_kit.py
+        run: python -m py_compile main.py pipeline.py paths.py modules/i18n.py icons.py updater.py keyboard_hook.py log_kit.py
 
       - name: i18n coverage
         run: |
-          python -c "import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
+          python -c "from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
 
       - name: Icon generation
         run: python icons.py

@@ -25,7 +25,7 @@ import winreg
 import pystray
 from PIL import Image, ImageDraw
 
-import i18n
+from modules import i18n
 import log_kit
 from paths import APP_ID, APP_NAME, RUN_DIR, VERSION, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
