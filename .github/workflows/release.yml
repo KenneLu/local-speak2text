@@ -65,7 +65,7 @@ jobs:
       # build.bat runs the gates, builds, and runs the frozen smoke check.
       # The smoke gate pins LOCALSPEAK2TEXT_CONFIG to the release folder's
       # shipped config (model_dir relative to the exe); pipeline's upward
-      # fallback resolves it to the models/ downloaded above.
+      # fallback resolves it to the asr-modules/ downloaded above.
       - name: Build release
         shell: cmd
         run: build.bat norun nopause

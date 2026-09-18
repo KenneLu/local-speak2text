@@ -68,7 +68,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile main.py pipeline.py paths.py modules/i18n.py icons.py updater.py keyboard_hook.py
+"%PY%" -m py_compile main.py pipeline.py paths.py icons.py updater.py keyboard_hook.py log_kit.py wasapi_probe.py src/modules/i18n/i18n.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause
@@ -79,7 +79,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 2: i18n coverage - zh/en tables must answer the core keys
 rem ---------------------------------------------------------------------------
 echo [TEST] i18n coverage ...
-"%PY%" -c "from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
+"%PY%" -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
 if errorlevel 1 (
   echo [ERROR] i18n check failed.
   if not defined NOPAUSE pause
@@ -145,7 +145,7 @@ rem Packaged config: model_dir sits NEXT TO the exe (the natural layout for an
 rem unpacked zip; the 2GB models folder is never shipped inside the package).
 rem Falls back to defaults when config.json is absent (fresh CI checkout).
 echo [CONFIG] writing packaged config.json ...
-"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':'KenneLu/local-speak2text'}; cfg['model_dir']='models/sensevoice-small-int8'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
+"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':'KenneLu/local-speak2text'}; cfg['model_dir']='asr-modules/sensevoice-small-int8'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 if errorlevel 1 (
   echo [ERROR] write config failed.
   if not defined NOPAUSE pause
@@ -174,7 +174,7 @@ if not exist "%RELEASE_DIR%\_internal\%APPNAME%-taskbar.ico" (
 rem ---------------------------------------------------------------------------
 rem Frozen check: the packaged exe must prove itself before shipping.
 rem LOCALSPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
-rem (model_dir resolves via the upward fallback to the repo's models/).
+rem (model_dir resolves via the upward fallback to the repo's asr-modules/).
 rem ---------------------------------------------------------------------------
 set "PYTHONUTF8=1"
 set "LOCALSPEAK2TEXT_CONFIG=%CD%\%RELEASE_DIR%\config.json"

@@ -35,7 +35,7 @@ jobs:
 
       - name: i18n coverage
         run: |
-          python -c "from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
+          python -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
 
       - name: Icon generation
         run: python icons.py

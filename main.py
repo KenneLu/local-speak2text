@@ -3,8 +3,8 @@
 
 用法:
   python main.py             源码运行（保留控制台输出）
-  local-speak2text-1.0.exe              打包运行（右下角托盘常驻）
-  local-speak2text-1.0.exe --smoke      冒烟测试，结果写入 exe 同目录 smoke.log
+  local-speak2text.exe              打包运行（右下角托盘常驻）
+  local-speak2text.exe --smoke      冒烟测试，结果写入 exe 同目录 smoke.log
 
 热键:
   按住右 Ctrl      按住说话，实时出字，松手后文字键入当前窗口
@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox
 import winreg
 

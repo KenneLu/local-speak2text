@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-# TEMPLATE-FROM: _template/modules/i18n/i18n.py | TEMPLATE-VER: 2.0.0
-# TEMPLATE-LOCAL-OVERRIDE: locales 目录解析随 frozen/dev 环境切换（工具只有这一处差异）
-
+# TEMPLATE-FROM: my-diy-tool-template/modules/i18n/i18n.py | TEMPLATE-VER: 2.1.0
 """T5 · i18n v2 —— 机制与词表分离（数据驱动，蓝本 local-speak2text/i18n.py）。
 
 代码只管机制（回退/格式化/持久化/探测）；词条是**数据**：工具根目录
 `locales/zh.json` + `locales/en.json`（扁平 KV，utf-8）。工具加词条只改 JSON，
 本文件与模板永远归一化一致（执行文档 N2/M1）。zh 键为基准，en 缺失回退 zh，
 永不 KeyError。内置最小兜底表：locales 缺失时机制仍可用。
+
+2.1.0：locales 目录解析内置 + 模块导入即自动加载——工具侧零样板，import 即得词条。
+目录解析用**向上查找回退**（平铺与 src/modules 布局都命中），打包态回退 _MEIPASS。
 """
 import json
 import os
@@ -19,6 +20,7 @@ _BUILTIN_EN = {"menu_quit": "Quit", "menu_open_logs": "Open log folder"}
 
 TABLES = {"zh": dict(_BUILTIN_ZH), "en": dict(_BUILTIN_EN)}
 LANG = "zh"
+# 门禁 2（D1）断言的核心键集：词表必须能回答这些键
 KEY_MIN_SET = ("menu_quit", "menu_open_logs")
 
 
@@ -84,13 +86,16 @@ def save_language_to_config(config_path, language):
 
 
 def _locales_dir():
-    """locales 数据目录：工具根的 locales\（源码态与打包态一致）。"""
-    here = Path(__file__).resolve().parent      # <root>/modules
-    root = here.parent
-    for candidate in (root / "locales", Path(getattr(sys, "_MEIPASS", "")) / "locales"):
-        if candidate.is_dir():
-            return candidate
-    return root / "locales"
+    """locales 数据目录：从本文件位置逐级向上查找（平铺与 src/modules 布局都命中）；
+    打包态回退 _MEIPASS（PyInstaller --add-data 落点）。找不到时退回最后一级
+    （load_tables 对缺失文件静默，兜底表保证机制可用）。"""
+    here = Path(__file__).resolve().parent
+    for base in (here, *here.parents):
+        cand = base / "locales"
+        if cand.is_dir():
+            return cand
+    meipass = getattr(sys, "_MEIPASS", "")
+    return Path(meipass) / "locales" if meipass else here / "locales"
 
 
 load_tables(_locales_dir())

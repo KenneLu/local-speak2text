@@ -11,7 +11,7 @@ The tagging convention matches the versions in this file.
   the 0.6B default; Qwen3 remains selectable via "Choose model folder".
 - Docs and locale strings updated to the new paths.
 
-## 1.3.1## 1.3.1
+## 1.3.1
 
 - Internal structure only: i18n moved into `modules/i18n.py` (family template
   layout, data-driven tables unchanged); imports updated. No behavior change.
