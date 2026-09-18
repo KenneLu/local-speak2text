@@ -31,20 +31,20 @@ jobs:
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
       # roundtrip runs only where asr-modules/ exists (local machine).
       - name: Compile check
-        run: python -m py_compile main.py pipeline.py paths.py src/modules/i18n/i18n.py icons.py updater.py keyboard_hook.py log_kit.py
+        run: python -m py_compile src/main.py src/pipeline.py src/paths.py src/modules/i18n/i18n.py src/icons.py src/updater.py src/keyboard_hook.py src/log_kit.py src/wasapi_probe.py
 
       - name: i18n coverage
         run: |
           python -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
 
       - name: Icon generation
-        run: python icons.py
+        run: python src/icons.py
 
       - name: Pipeline selftest (only when models are present)
         shell: pwsh
         run: |
           if (Test-Path "asr-modules/sensevoice-small-int8/model.int8.onnx") {
-            python pipeline.py
+            python src/pipeline.py
           } else {
             Write-Host "asr-modules/ not in CI checkout - skipping ASR roundtrip"
           }

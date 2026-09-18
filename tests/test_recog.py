@@ -8,7 +8,7 @@ import os
 import numpy as np
 import sherpa_onnx
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 仓库根
 MODEL_DIR = os.path.join(BASE_DIR, "asr-modules", "qwen3-asr-0.6B")
 SAMPLE_RATE = 16000
 

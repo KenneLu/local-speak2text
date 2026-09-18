@@ -21,7 +21,8 @@ VERSION = "1.4.0"
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
 else:
-    APP_DIR = Path(__file__).resolve().parent
+    # dev 态 = 仓库根（模型/出厂 config/图标生成物都住根）；本文件在 src/，上一级即根
+    APP_DIR = Path(__file__).resolve().parents[1]
 RUN_DIR = APP_DIR
 
 USER_DATA_DIR = Path(

@@ -34,7 +34,7 @@ if errorlevel 1 (
 
 rem Version: read from paths.py so the script and the app cannot drift apart
 set VERSION=
-for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " paths.py') do set VERSION=%%~b
+for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\paths.py') do set VERSION=%%~b
 if not defined VERSION (
   echo [ERROR] Cannot read VERSION from paths.py.
   if not defined NOPAUSE pause
@@ -68,7 +68,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile main.py pipeline.py paths.py icons.py updater.py keyboard_hook.py log_kit.py wasapi_probe.py src/modules/i18n/i18n.py
+"%PY%" -m py_compile src/main.py src/pipeline.py src/paths.py src/icons.py src/updater.py src/keyboard_hook.py src/log_kit.py src/wasapi_probe.py src/modules/i18n/i18n.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause
@@ -90,7 +90,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 3: pipeline selftest with the default model (real ASR roundtrip)
 rem ---------------------------------------------------------------------------
 echo [TEST] pipeline selftest ...
-"%PY%" pipeline.py
+"%PY%" src\pipeline.py
 if errorlevel 1 (
   echo [ERROR] pipeline selftest failed.
   if not defined NOPAUSE pause
@@ -101,7 +101,7 @@ rem ---------------------------------------------------------------------------
 rem Icon: generate tray + taskbar .ico (code-drawn, no art assets)
 rem ---------------------------------------------------------------------------
 echo [BUILD] icon ...
-"%PY%" icons.py
+"%PY%" src\icons.py
 if errorlevel 1 (
   echo [ERROR] icon generation failed.
   if not defined NOPAUSE pause
@@ -123,7 +123,7 @@ echo [BUILD] PyInstaller onedir noconsole ...
   --hidden-import PIL.ImageDraw ^
   --collect-all sherpa_onnx ^
   --collect-all sounddevice ^
-  main.py
+  src\main.py
 if errorlevel 1 (
   echo [ERROR] PyInstaller failed.
   if not defined NOPAUSE pause

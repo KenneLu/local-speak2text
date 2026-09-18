@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-"H:\Tools\Python\Python313\python.exe" main.py
+"H:\Tools\Python\Python313\python.exe" src\main.py
 pause
