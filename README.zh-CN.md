@@ -56,7 +56,7 @@ log\           应用日志，每次识别追加一行性能记录（模型、�
 crash.log      万一崩溃，未捕获异常落在这里
 ```
 
-常用配置：`language`（`zh` / `en` / `auto`）、`update_repo`（`用户名/仓库名`，填了才启用更新检查）、`num_threads`（ONNX 线程数——实测 16 线程 CPU 上 8 最快）、`model_dir`。测试/便携模式可用环境变量 `LOCALSPEAK2TEXT_CONFIG` 指定配置文件。
+常用配置：`language`（`zh` / `en` / `auto`）、`update_repo`（`用户名/仓库名`，填了才启用更新检查）、`num_threads`（ONNX 线程数——实测 16 线程 CPU 上 8 最快）、`model_dir`。测试/便携模式可用环境变量 `LOCALSPEAK2TEXT_CONFIG` 指定配置文件；`LOCALSPEAK2TEXT_DATA_DIR` 重定向整个数据根（测试/CI 必须用它，绝不能与常驻托盘实例共享任何落盘文件）。
 
 ## 更新
 
@@ -76,7 +76,7 @@ build.bat norun nopause  :: 无人值守，CI 用
 release.bat          :: 打 v版本 tag 并推送；CI 构建并发布 zip
 ```
 
-版本号在 `paths.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+版本号在 `src/modules/appconfig/appconfig.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。共用机制件在 `src/modules/`（模板拷贝：`appconfig`、`paths`、`log_kit`、`i18n`、`autostart`、`tray_kit`），工具自身逻辑留在 `src/main.py` / `pipeline.py`。`local-speak2text.exe --quit` 可让运行中的实例退出（不弹确认框）。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可
 

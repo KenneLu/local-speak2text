@@ -3,6 +3,31 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## Unreleased
+
+- **Mechanism code now converges on the family template** (`my-diy-tool-template`
+  modules, byte-identical copies): `icons` 2.0.0, `log_kit` 1.0.2, `paths` 1.1.2,
+  `autostart` 1.1.1, `tray_kit` 2.0.1, plus the `appconfig` parameter file.
+  `src/modules/` is now the home of shared mechanism; `main.py` keeps only
+  tool-specific logic.
+- `VERSION` moved to `src/modules/appconfig/appconfig.py` (still the single
+  source of truth; `build.bat` / `release.bat` / `release.yml` read it there).
+- **Fixed (GUI-verified): Esc did not close the quit confirmation dialog.**
+  The quit dialog is now `tray_kit.confirm_quit_dialog`, which binds
+  `<Escape>` to cancel; `tests/test_quit_confirm.py` presses Esc to pin it.
+  Unconfirmed quits are impossible: rich dialog -> native `askyesno` ->
+  proceed, never skipping confirmation.
+- Tray menu rebuilds go through `tray_kit.MenuSignature` with a menu-open
+  probe, so a rebuild can no longer yank an open right-click menu away.
+- **New `--quit`**: asks a running instance to exit without the confirm
+  dialog (request file lives under the redirectable data dir).
+- Icon graphics are single-sourced from `appconfig.ICON_DRAW` (runtime tray
+  and build-time `.ico` share one drawing function).
+- Two declared `TEMPLATE-LOCAL-OVERRIDE`s in `paths.py`, kept deliberately:
+  `LOCALSPEAK2TEXT_CONFIG` (template 1.1.2 has no `_CONFIG`), and the
+  `LOCALSPEAK2TEXT_*` env prefix (the template's `APP_ID`-derived name would
+  become `LOCAL_SPEAK2TEXT_*` and silently break instance isolation F11).
+
 ## 1.4.1
 
 - **Fixed: the exe could not start at all since 1.2.0.** The single-instance
