@@ -11,6 +11,16 @@ import sys
 import winreg
 from pathlib import Path
 
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
+
+# F11/D12 实例隔离：必须在 import autostart 之前重定向数据根与配置，否则导入期的
+# seed_config() 会写用户真实的 %LOCALAPPDATA%\local-speak2text\。
+# 本测试**有意**操作真实 HKCU Run（验证自启自愈形态，见下方 finally 的还原），
+# 但数据区必须是隔离的——"改注册表"是它的被测对象，"改用户文件"不是。
+_TMP = scratch_dir("l-s2t-migrate-")
+os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
+os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+
 _SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(_SRC))
 from modules import autostart as A  # noqa: E402
@@ -66,3 +76,5 @@ finally:
     _back, now = read_run_value()
     assert now == original, "autostart not restored: %r != %r" % (now, original)
     print("autostart restored", flush=True)
+
+assert rmtree_cleanup(_TMP), "temp dir not cleaned (leak): %s" % _TMP

@@ -65,6 +65,8 @@
   "status_listening_cont": "● Continuous listening... Ctrl+Space to finish, Esc to cancel",
   "status_listening_hold": "● Listening... release Right-Ctrl to finish",
   "status_recognizing": "Recognizing...",
+  "smoke_model_dir_missing": "Model directory does not exist: %s",
+  "smoke_mutex_invalid": "Single-instance mutex name is invalid: %s",
   "tray_idle": "%s - ready",
   "tray_load_failed": "%s - model load failed",
   "tray_loading": "%s - loading model...",

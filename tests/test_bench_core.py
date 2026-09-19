@@ -2,9 +2,19 @@
 """验证 run_benchmark 核心（真跑三模型）。"""
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
-import pipeline as P
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
+
+# F11/D12 实例隔离：必须在 import pipeline 之前重定向数据根与配置——导入期的
+# seed_config() 与 run_benchmark 的 perf_log() 都会落盘，不钉就会写用户真实的
+# %LOCALAPPDATA%\local-speak2text\（用户红线：构建不得影响服务）。
+_TMP = scratch_dir("l-s2t-bench-")
+os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
+os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import pipeline as P  # noqa: E402
 
 events = []
 
@@ -26,4 +36,5 @@ print("progress events =", len(events))
 assert events, "no progress events"
 assert any(r["type"] == "sense_voice" for r in result["results"])
 assert result["reco"], "expected a recommendation"
+assert rmtree_cleanup(_TMP), "temp dir not cleaned (leak): %s" % _TMP
 print("BENCH CORE OK")

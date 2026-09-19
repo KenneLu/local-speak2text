@@ -1,10 +1,20 @@
 # -*- coding: utf-8 -*-
 """Help 弹窗 + 复制提示词（内容断言，不落剪贴板）+ 英文模式文案完整性。"""
+import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
-from modules import i18n
-import main as M
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
+
+# F11/D12 实例隔离：必须在 import main 之前重定向数据根与配置，否则导入期的
+# seed_config() 会写用户真实的 %LOCALAPPDATA%\local-speak2text\。
+_TMP = scratch_dir("l-s2t-helpui-")
+os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
+os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from modules import i18n  # noqa: E402
+import main as M  # noqa: E402
 
 for lang in ("zh", "en"):
     i18n.init(lang)
@@ -39,4 +49,5 @@ for lang in ("zh", "en"):
     print(f"[{lang}] help + prompt OK")
     overlay.root.quit()
     overlay.root.destroy()
+assert rmtree_cleanup(_TMP), "temp dir not cleaned (leak): %s" % _TMP
 print("HELP/COPY/PROMPT TEST OK")

@@ -50,11 +50,25 @@ if os.path.isdir(LEGACY_MODELS_DIR) and not os.path.isdir(MODELS_DIR):
 DEFAULT_MODEL_DIR = os.path.join(MODELS_DIR, "sensevoice-small-int8")   # 默认模型：更轻、RTF 更低（1.4.0 起）
 MODEL_DIR = DEFAULT_MODEL_DIR
 MODEL_NAME = os.path.basename(MODEL_DIR)
+# 模型目录的**来源**（见 `_find_existing_model_dir`）：default / config / fallback / missing。
+# 之所以要显式记着它：现在的门禁只靠"向上查找回退"才绿，来源不打印出来就查不到这件事。
+MODEL_DIR_CONFIGURED = DEFAULT_MODEL_DIR   # 配置里写的（未回退前）的值
+MODEL_DIR_SOURCE = "default"
 
 AUTO_GAIN = True
 SEGMENT_PADDING = 0.15
 VAD_FLOOR = 0.005
 NUM_THREADS_CFG = NUM_THREADS  # config.json 可覆盖
+
+
+def _engine_default_model_dir():
+    """`AsrEngine()` 不带参数时，**此刻**会用的模型目录（#46）。
+
+    单独提出来，是为了让 `AsrEngine.__init__` 与 `describe_model_resolution()` 共用
+    **同一条取值规则**。两边各写一遍正是 #46 的成因：一边在定义时求值、一边在调用时
+    求值，于是"打印出来的目录"和"真正加载的目录"可以长期不一致，而谁也看不出来。
+    """
+    return MODEL_DIR
 
 
 def _resolve_model_dir(value):
@@ -67,28 +81,103 @@ def _resolve_model_dir(value):
 
 def _find_existing_model_dir(configured):
     """模型目录解析：配置值优先；不存在则向上层目录查找（release 包在仓库内时，
-    配置的相对 models/ 在 exe 旁不存在，但仓库根有）。最后回退内置两个已知模型。"""
+    配置的相对 models/ 在 exe 旁不存在，但仓库根有）。最后回退内置两个已知模型。
+
+    返回 `(实际使用的目录, 来源)`，来源 ∈ {`"config"`, `"fallback"`, `"missing"`}。
+    **为什么要返回来源**：本仓当前的状态是"配置里那个 `models\\…` 早已改名成
+    `asr-modules\\…`"，于是**运行时**只是靠回退才绿。把回退暴露成可打印的事实，
+    等于让"绿灯的原因"可见——和 GATE 3 从"不崩就绿"升级为文本断言是同一条思路。
+    """
     candidates = [configured]
     here = Path(BASE_DIR)
     for parent in [here] + list(here.parents)[:3]:
         candidates.append(str(parent / "asr-modules" / "sensevoice-small-int8"))
         candidates.append(str(parent / "asr-modules" / "qwen3-asr-0.6B"))
         candidates.append(str(parent / "models" / "sensevoice-small-int8"))   # 1.3.x 旧位置兜底
-    for cand in candidates:
-        if cand and os.path.isdir(cand) and os.path.isdir(cand):
-            return cand
-    return configured
+    for i, cand in enumerate(candidates):
+        if cand and os.path.isdir(cand):
+            return cand, ("config" if i == 0 else "fallback")
+    return configured, "missing"
+
+
+MODEL_SOURCE_LABEL = {
+    "config": "配置文件（命中）",
+    "default": "内置默认（配置未指定）",
+    "fallback": "向上查找回退（配置指定的路径不存在）",
+    "missing": "未找到（加载将失败）",
+}
+
+
+def describe_model_resolution():
+    """**只读**地描述模型目录解析，供 GATE 3 打印"绿灯的原因"。不改任何全局。
+
+    三件事必须分开报，因为它们**不保证是同一个路径**——这正是要看见的东西：
+      `engine`     `AsrEngine()` 此刻实际会加载的目录（走 `_engine_default_model_dir`，
+                   与 `__init__` 同一条规则）。#46 修复前它是**导入期快照**，与
+                   `resolved` 长期可以不一致；现在两者同源，若仍然不等，说明
+                   `load_config()` 没在配置改动后重跑过（`MODEL_DIR` 是陈旧的）。
+      `configured` 配置文件里 `model_dir` 解析后的路径（相对路径按 `BASE_DIR` 展开）。
+      `resolved`   走完 `_find_existing_model_dir` 的路径与来源（config/fallback/missing）。
+      `live_*`     **常驻实例**那份配置（`%LOCALAPPDATA%\\<APP_ID>\\config.json`）的状态。
+
+    为什么还要单列 `live_*`：构建期把 `<APP>_DATA_DIR` 钉到 `build/` 之后，`CONFIG_PATH`
+    会**跟着搬走**（它默认 = `USER_DATA_DIR/config.json`），而 `seed_config()` 会在新位置
+    播下一份**出厂** config（`model_dir` 是新路径）——于是"用户配置陈旧、只能靠回退"
+    这件事反而被遮住了。所以要单独、只读地去看常驻那份。
+    """
+    # `engine` = 此刻不带参数构造 `AsrEngine()` 会加载的目录。必须走**与 __init__ 同一条
+    # 取值规则**（`_engine_default_model_dir`）——旧写法读默认参数 `signature(...).default`
+    # 是把它当成"引擎实际会加载什么"的代理，而那个默认值恰恰是导入期快照（#46）。
+    engine_dir = str(_engine_default_model_dir())
+
+    def _model_dir_of(path):
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                return json.load(f).get("model_dir")
+        except Exception:
+            return None
+
+    raw = _model_dir_of(CONFIG_PATH)
+    configured = _resolve_model_dir(raw)
+    resolved, hit = _find_existing_model_dir(configured)
+    # 常驻配置：目录名 = APP_ID，与是否重定向数据根无关（重定向只换前缀，不换末级名）。
+    live_path = Path(os.environ.get("LOCALAPPDATA", "")) / os.path.basename(
+        os.path.dirname(str(_USER_CONFIG_PATH))) / "config.json"
+    live_raw = _model_dir_of(str(live_path))
+    live_configured = _resolve_model_dir(live_raw)
+    return {
+        "config_value": raw,
+        "configured": configured,
+        "configured_exists": os.path.isdir(configured),
+        "resolved": resolved,
+        "source": "default" if not raw else hit,
+        "engine": engine_dir,
+        "live_config": str(live_path),
+        "live_config_exists": live_path.is_file(),
+        "live_value": live_raw,
+        "live_configured": live_configured,
+        "live_configured_exists": os.path.isdir(live_configured),
+    }
 
 
 def load_config():
     global AUTO_GAIN, SEGMENT_PADDING, VAD_FLOOR, MODEL_DIR, MODEL_NAME, NUM_THREADS_CFG
+    global MODEL_DIR_CONFIGURED, MODEL_DIR_SOURCE
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
             cfg = json.load(f)
         AUTO_GAIN = bool(cfg.get("auto_gain", True))
         SEGMENT_PADDING = float(cfg.get("segment_padding", 0.15))
         VAD_FLOOR = float(cfg.get("vad_floor", 0.005))
-        MODEL_DIR = _find_existing_model_dir(_resolve_model_dir(cfg.get("model_dir")))
+        raw = cfg.get("model_dir")
+        configured = _resolve_model_dir(raw)
+        MODEL_DIR, hit = _find_existing_model_dir(configured)
+        MODEL_DIR_CONFIGURED = configured
+        # 来源要区分"配置没写"与"配置写了但没命中"——否则内置默认会被误报成"来自配置"。
+        if not raw:
+            MODEL_DIR_SOURCE = "default"
+        else:
+            MODEL_DIR_SOURCE = hit
         MODEL_NAME = os.path.basename(os.path.normpath(MODEL_DIR))
         NUM_THREADS_CFG = max(1, int(cfg.get("num_threads", NUM_THREADS)))
     except Exception:
@@ -257,7 +346,14 @@ def perf_log(msg):
 class AsrEngine:
     """按模型目录自动选择 sherpa-onnx loader（qwen3_asr / sense_voice / fire_red_asr / paraformer）。"""
 
-    def __init__(self, model_dir=MODEL_DIR, num_threads=None, model_type=None):
+    def __init__(self, model_dir=None, num_threads=None, model_type=None):
+        # `model_dir=None` 是 sentinel，不是"用一个默认目录"——真正的取值发生在**调用时**。
+        # 旧写法 `model_dir=MODEL_DIR` 的默认参数在**函数定义时**求值一次，即导入期的快照；
+        # `load_config()` 之后重绑模块级 MODEL_DIR 对它无效，于是"用户在托盘里换了模型目录、
+        # 引擎却还在加载老模型"（#46，实测见 tests/test_engine_model_dir.py）。
+        # 紧挨着的 num_threads 本来就是 Sentinel + 体内取值，两者现在同形。
+        if model_dir is None:
+            model_dir = _engine_default_model_dir()
         if num_threads is None:
             num_threads = NUM_THREADS_CFG
         self.model_dir = model_dir
@@ -664,6 +760,42 @@ def selftest(wav_path):
             elif ev[0] == "commit":
                 print(f"[commit] {ev[2]}")
 
+    # 让"绿灯的原因"可见（lead 裁定 2026-09-19）：模型目录从哪来、是否靠回退。
+    # 不判 FAIL —— 配置陈旧是用户侧状态，不是代码缺陷；最多 OUTPUT + WARN。
+    info = describe_model_resolution()
+    print("[selftest] engine  模型目录: %s" % info["engine"])
+    print("[selftest] config  model_dir: %r -> %s (%s)"
+          % (info["config_value"], info["configured"],
+             "存在" if info["configured_exists"] else "不存在"))
+    print("[selftest] 解析结果: %s  来源=%s"
+          % (info["resolved"], MODEL_SOURCE_LABEL.get(info["source"], info["source"])))
+    if info["source"] == "fallback":
+        print("[WARN] 本次生效配置指定的模型目录不存在，靠向上查找回退才跑通；"
+              "请更新配置里的 model_dir 以消除这条隐式依赖。")
+    # 常驻实例那份配置：**用户侧状态陈旧**，不是代码缺陷 → 只报 WARN，不判 FAIL。
+    print("[selftest] 常驻配置: %s (%s)"
+          % (info["live_config"], "存在" if info["live_config_exists"] else "不存在"))
+    if info["live_config_exists"]:
+        print("[selftest] 常驻 model_dir: %r -> %s (%s)"
+              % (info["live_value"], info["live_configured"],
+                 "存在" if info["live_configured_exists"] else "不存在"))
+        if not info["live_configured_exists"]:
+            print("[WARN] 常驻实例配置里的 model_dir 指向的目录在磁盘上不存在；"
+                  "该实例运行时只能靠向上查找回退才找得到模型——请更新那份配置。")
+    if os.path.normcase(info["engine"]) != os.path.normcase(info["resolved"]):
+        print("[WARN] AsrEngine() 此刻会加载的目录（%s）与解析结果（%s）不是同一个——"
+              "两者已共用同一条取值规则（#46），所以这通常意味着配置改过之后没有重跑 "
+              "`load_config()`，模块级 MODEL_DIR 是陈旧的。" % (info["engine"], info["resolved"]))
+    # #46 回归探针：把"正确形态"直接钉成构建期可见的事实——默认参数必须是 None sentinel，
+    # 一旦有人改回 `model_dir=MODEL_DIR`（导入期快照），这里立刻说出来。
+    # 与本节其余条目同级：WARN，不判 FAIL（它说的是代码形态，但构建不该因此停下）。
+    from inspect import signature as _sig
+    _default = _sig(AsrEngine.__init__).parameters["model_dir"].default
+    if _default is not None:
+        print("[WARN] AsrEngine 的 model_dir 默认参数又内嵌了目录（%r）——"
+              "那是定义时求值的导入期快照，改配置后引擎不会跟着换目录（#46 回归）。"
+              % (_default,))
+
     print("加载模型…")
     engine = AsrEngine()
     sink = Sink()
@@ -678,11 +810,27 @@ def selftest(wav_path):
 
     time.sleep(0.5)
     pipe.finish()
-    finish_ev.wait(timeout=60)
+    # 返回值必须判（2026-09-19 修）：`Event.wait()` 超时返回 False，旧写法把它丢弃，
+    # "超时"与"正常完成"在输出上完全一样——这条门禁因此永远不会变红。
+    if not finish_ev.wait(timeout=60):
+        raise RuntimeError(
+            "自检超时：60s 内没有收到 finish 事件（识别未完成或流水线卡住）")
 
     committed = "".join(ev[2] for ev in sink.events if ev[0] == "commit")
     print("=" * 40)
     print("定稿文本:", committed)
+    # 结果断言（2026-09-19 补）：旧写法只断言 wav 格式，识别出乱码也照样绿。
+    # 只钉**稳定项**、不做整句相等——实测 sensevoice / qwen3 / fireredasr 三个本地模型
+    # 对同一 wav 都产出"欢迎大家来体验达摩院推出的语音识别模型"，取交集词判据：
+    # 命中 >=2 个即正常，容忍 ASR 的少量波动，但空输出或乱码一定红。
+    if not committed.strip():
+        raise RuntimeError("自检失败：定稿文本为空（模型加载成功但没有任何输出）")
+    _STABLE_TOKENS = ("欢迎", "达摩院", "语音")
+    _hits = [tok for tok in _STABLE_TOKENS if tok in committed]
+    if len(_hits) < 2:
+        raise RuntimeError(
+            "自检失败：定稿文本与预期相差过大（命中稳定项 %r，期望 >=2 个，候选 %r）：%r"
+            % (_hits, list(_STABLE_TOKENS), committed))
 
 
 if __name__ == "__main__":

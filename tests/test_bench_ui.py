@@ -6,10 +6,19 @@
 import os
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, r"H:\Tools\my_diy_tools\local-speak2text\src")
-from modules import i18n
-import main as M
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
+
+# F11/D12 实例隔离：必须在 import main 之前重定向数据根与配置，否则导入期的
+# seed_config() 与基准的 perf_log() 会写用户真实的 %LOCALAPPDATA%\local-speak2text\。
+_TMP = scratch_dir("l-s2t-benchui-")
+os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
+os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from modules import i18n  # noqa: E402
+import main as M  # noqa: E402
 
 i18n.init("zh")
 overlay = M.Overlay()
@@ -61,4 +70,5 @@ ctrl._start_benchmark()
 overlay.root.after(1500, check)
 overlay.root.mainloop()
 ctrl.hook.stop()
+assert rmtree_cleanup(_TMP), "temp dir not cleaned (leak): %s" % _TMP
 print("BENCH UI TEST OK")

@@ -33,11 +33,14 @@ from updater import (check_update, download_update, prepare_update_cmd,
                      process_pending_update, pop_failed_update_note,
                      launch_pending_cmd)
 from keyboard_hook import KeyboardHook
+# ⚠️ `MODEL_DIR` / `MODEL_NAME` 有意**不**在这里 from-import：`from ... import X` 绑的是
+# **导入那一刻的静态副本**，而 `pipeline.load_config()` 之后重绑的是 `pipeline.MODEL_DIR`。
+# 两者一旦不同步，用户就会看到"换了模型目录、对话框还开在旧目录、通知还印旧目录"（#47）。
+# 需要它们时一律现取：`pipeline.MODEL_DIR`。
+import pipeline
 from pipeline import (
     AsrEngine,
     CONFIG_PATH,
-    MODEL_DIR,
-    MODEL_NAME,
     Pipeline,
     load_config,
     set_auto_gain,
@@ -77,10 +80,17 @@ def _log_handle():
     return _LOG_HANDLE
 
 
-def log(message):
-    """写一行 INFO。日志失败静默——日志永远不能把主流程弄死。"""
+def log(*parts):
+    """写一行 INFO，**print 形态**（可变参数，空格拼接）。
+
+    形态必须与模板件的调用方式一致：`tray_kit` / `autostart` / `update_helper` 都按
+    print 形态调用（`log("downloading", stem)`、`log("update staged:", staged, "->", target)`），
+    单参包装会在模板件内部直接 TypeError（C-29 判据；dsh/ocx 早有 `def log(*parts)`）。
+    拼接后**只传一个字符串**给 log_kit，因此对 1.0.2（单参闭包）与 1.0.3（print 形态）都成立。
+    日志失败静默——日志永远不能把主流程弄死。
+    """
     try:
-        _log_handle()[0](message)
+        _log_handle()[0](" ".join(str(p) for p in parts))
     except Exception:
         pass
 
@@ -889,8 +899,22 @@ class Controller:
         """退出二次确认（T7 tray_kit.confirm_quit_dialog；G4.1 条款 4 / G4.2 条款 5）。
 
         旧内联版没有 <Escape> 绑定——GUI 实测按 Esc 关不掉弹窗；模板版有。
-        降级链（禁止跳过确认）：富对话框 → 原生 askyesno → 放行且默认沿用勾选。
+        降级链（禁止跳过确认）：富对话框 → 原生 askyesno → 链路不可用时放行退出。
         勾选项 = 退出后是否自动安装已下载的更新；勾选动作即落盘（点取消也留存）。
+
+        三态必须分开（#44-A，与 dsh/ocx 的 `_decide_quit` 同形）：
+          None              → 弹窗链路整个不可用（**不是**用户作答）⇒ 放行退出，
+                              且 `quit_apply_update = False`（**不沿用已存勾选**）
+          {"go": False}     → 用户明确取消（Esc / 关窗 / 「取消」）⇒ 不退出
+          {"go": True, ...} → 用户确认 ⇒ 退出，并按已存勾选决定是否应用更新
+        两条边界都要守住：
+          *「不可用 ⇒ 放行」**不等于**「默认 go=True」——确认框没被拆掉时问到就听用户的；
+          *「不可用 ⇒ 放行退出」**也不等于**「不可用时照用户上次的勾选执行副作用」——
+            用户这次没被问过，就必须选"保住现场"的那一侧（dsh/ocx 末级硬编码 False）。
+        依据：tray_kit.confirm_quit_dialog 的 docstring 第 161 行说「取消返回 None」，
+        但实现里取消只 destroy，result 保持 `{"go": False, ...}`，第 220 行
+        `return result or None` 因此**恒为 dict**——取消不会被误当成「链路不可用」，
+        这正是三态能分开的前提。（该 docstring 与实现不符，已上报模板侧。）
         """
         cfg = load_config_dict()
         checked = bool(cfg.get("quit_apply_update", True))
@@ -900,6 +924,8 @@ class Controller:
             c["quit_apply_update"] = bool(value)
             save_config_dict(c)
 
+        # 本函数由 ui_q 的 "quit_confirm" 事件在 Tk 线程上派发（见 poll），所以
+        # confirm_quit_dialog 可直接拿 self.overlay.root 当 parent，无需 ui_post 封送。
         choice = None
         try:
             # 2.0.2：弹窗全部用户可见文案经参数注入 i18n 词条（模板不再硬编码中文）
@@ -918,10 +944,20 @@ class Controller:
                                          parent=self.overlay.root)
                 choice = {"go": bool(go), "stop_service": checked}
             except Exception as exc2:
-                log("native confirm failed (%s: %s); proceeding"
-                    % (type(exc2).__name__, exc2))
-                choice = {"go": True, "stop_service": checked}
-        if not choice or not choice.get("go"):
+                # Tk 运行时缺失 / 会话不可交互：这**不是**用户作答，交给下面 None 分支放行。
+                log("native confirm failed (%s: %s)" % (type(exc2).__name__, exc2))
+                choice = None
+        if choice is None:
+            # 链路不可用 ⇒ **用户这次根本没被问过**，所以不得沿用他上次在"有确认框"
+            # 语境下保存的勾选去执行破坏性动作（这里 = 退出时应用已下载的更新，见
+            # main() 的 finally）。按"保住现场"那一侧倒 —— 这正是 dsh/ocx 末级
+            # 硬编码 False 的同一形态："没问到"与"用户选了"必须分开。
+            log("quit confirm unavailable; quitting WITHOUT applying the pending update")
+            self.quit_apply_update = False
+            self.ui_q.put(("exit",))
+            return
+        if not choice.get("go"):
+            log("quit cancelled by user")
             return
         # 勾选状态已随勾选动作落盘；记住最终值供退出收尾决定是否执行更新替换
         self.quit_apply_update = bool(load_config_dict().get("quit_apply_update", True))
@@ -932,7 +968,9 @@ class Controller:
             self.on_state_change(recording)
 
     def _choose_model_dir(self):
-        initial = MODEL_DIR if os.path.isdir(MODEL_DIR) else os.path.dirname(os.path.abspath(MODEL_DIR))
+        # 现取：对话框的初始目录必须是**此刻**的模型目录（#47），不是导入期的快照
+        current = pipeline.MODEL_DIR
+        initial = current if os.path.isdir(current) else os.path.dirname(os.path.abspath(current))
         chosen = filedialog.askdirectory(title=i18n.t("menu_choose_model_title"), initialdir=initial)
         if not chosen:
             return
@@ -950,7 +988,8 @@ class Controller:
         if not self.hook_started:
             self.hook_started = self.hook.start()
         if self.notify:
-            self.notify(i18n.t("notify_model_updated") % (MODEL_DIR, new_engine.model_type))
+            # 同上：通知里印的必须是刚生效的那个目录（`load_config()` 已在上面跑过）
+            self.notify(i18n.t("notify_model_updated") % (pipeline.MODEL_DIR, new_engine.model_type))
 
 
 def type_text(text):
@@ -1063,13 +1102,15 @@ def smoke():
         # D3.1：冒烟必须覆盖单实例守卫——用 tray_kit 探针（只验名字合法，不占锁、
         # 不弹窗），与运行期守卫共用同一份命名判据（2.2.0 的 mutex_name_ok）。
         if not tray_kit.mutex_name_is_valid(APP_ID, mutex_name=MUTEX_NAME):
-            raise RuntimeError("单实例互斥体名非法: " + MUTEX_NAME)
+            raise RuntimeError(i18n.t("smoke_mutex_invalid", MUTEX_NAME))
         load_config()
-        if not os.path.isdir(MODEL_DIR):
-            raise RuntimeError("模型目录不存在: " + MODEL_DIR)
+        # 现取：`load_config()` 刚把 `pipeline.MODEL_DIR` 更新过，校验值 / 引擎实际加载值 /
+        # 打印值必须是**同一个** —— 旧写法三处各读一次快照，可以互不相同（#47 的裂缝）
+        if not os.path.isdir(pipeline.MODEL_DIR):
+            raise RuntimeError(i18n.t("smoke_model_dir_missing", pipeline.MODEL_DIR))
         engine = AsrEngine()
         del engine
-        msg = "OK model_dir=" + MODEL_DIR
+        msg = "OK model_dir=" + pipeline.MODEL_DIR
         with open(log, "w", encoding="utf-8") as f:
             f.write(msg)
         return 0

@@ -15,13 +15,13 @@
      zh 的签名 == 切回 zh 的签名，且 != en 的签名。
 """
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
 
 # 实例隔离（F11/D12）：import main 之前重定向数据根，避免碰到用户真实 AppData。
-_TMP = tempfile.mkdtemp(prefix="l-s2t-i18n-")
+_TMP = scratch_dir("l-s2t-i18n-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -91,7 +91,7 @@ check("signature changes back on en -> zh",
       sig_en != sig_zh_again and sig_zh == sig_zh_again,
       "zh=%r en=%r zh2=%r" % (sig_zh, sig_en, sig_zh_again))
 
-shutil.rmtree(_TMP, ignore_errors=True)
+check("temp dir cleaned up (no %TEMP% leak)", rmtree_cleanup(_TMP), str(_TMP))
 print("I18N MENU TEST "
       + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)
 sys.exit(1 if FAILS else 0)

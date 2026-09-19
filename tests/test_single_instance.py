@@ -21,14 +21,14 @@
 """
 import ctypes
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
 
 # 实例隔离（F11/D12）：必须在 import paths/main **之前**重定向数据根，
 # 否则守卫的日志会写进用户真实的 %LOCALAPPDATA%。
-_TMP = tempfile.mkdtemp(prefix="l-s2t-test-")
+_TMP = scratch_dir("l-s2t-test-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -139,7 +139,7 @@ try:
 finally:
     ctypes.WinDLL = _real_win_dll
 
-shutil.rmtree(_TMP, ignore_errors=True)
+check("temp dir cleaned up (no %TEMP% leak)", rmtree_cleanup(_TMP), str(_TMP))
 print("SINGLE INSTANCE TEST "
       + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)
 sys.exit(1 if FAILS else 0)

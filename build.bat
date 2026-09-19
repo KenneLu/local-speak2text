@@ -72,7 +72,13 @@ set "RUNNING_EXE="
 for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "(Get-Process -Name %APPNAME% -ErrorAction SilentlyContinue).Path | Select-Object -First 1"`) do set "RUNNING_EXE=%%p"
 set "RUNNING_DIR="
 if defined RUNNING_EXE for %%d in ("%RUNNING_EXE%") do set "RUNNING_DIR=%%~dpd"
-if defined RUNNING_DIR if "%RUNNING_DIR:~-1%"=="\" set "RUNNING_DIR=%RUNNING_DIR:~0,-1%"
+rem Normalize a trailing backslash WITHOUT the `"%~1"=="\"` idiom: cmd parses
+rem the sequence backslash-quote specially and aborts the whole script with
+rem "The syntax of the command is incorrect." -- and it fires on the
+rem "no instance running" path, i.e. the guard broke the very build it exists
+rem to protect. `%%~fd` strips the trailing backslash for us (same idiom as
+rem TARGET_DIR below).
+if defined RUNNING_DIR for %%d in ("%RUNNING_DIR%") do set "RUNNING_DIR=%%~fd"
 set "TARGET_DIR="
 for %%d in ("%CD%\%RELEASE_DIR%") do set "TARGET_DIR=%%~fd"
 if defined RUNNING_DIR if /i "%RUNNING_DIR%"=="%TARGET_DIR%" (
@@ -108,6 +114,15 @@ if errorlevel 1 (
   if not defined NOPAUSE pause
   exit /b 1
 )
+
+rem ---------------------------------------------------------------------------
+rem F11/D12 harness pin (2026-09-19): every suite below pins its own data root, but
+rem that is per-file discipline - a NEW test that forgets it gets a green build while
+rem writing the user's live %LOCALAPPDATA% root. reme's build pins once around its
+rem whole test section (scripts/build.bat:22); do the same here so this class of
+rem accident cannot recur. Cleared right after GATE 2f.
+rem ---------------------------------------------------------------------------
+set "LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\build\test-data"
 
 rem ---------------------------------------------------------------------------
 rem GATE 2b: single-instance guard + normal startup path (headless, no GUI)
@@ -157,12 +172,80 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem GATE 2e: quit decision - the three states must stay distinct.
+rem   link unavailable (both dialog links raise) -> exit anyway, but do NOT apply a
+rem   pending update (the user was never asked this time); user cancel -> no exit;
+rem   confirmed -> exit and honour the persisted checkbox. Also asserts exactly ONE
+rem   exit event per decision, since a double release runs the exit tail twice.
+echo [TEST] quit decision (fail-open + tri-state) ...
+"%PY%" tests\test_quit_failopen.py
+if errorlevel 1 (
+  echo [ERROR] quit decision test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+rem GATE 2f: AsrEngine must read MODEL_DIR at CALL time, not as an import-time
+rem   snapshot. Regression for #46: changing model_dir in the config had no effect
+rem   on the engine, so it kept loading the old model.
+echo [TEST] engine model dir (call-time, not snapshot) ...
+"%PY%" tests\test_engine_model_dir.py
+if errorlevel 1 (
+  echo [ERROR] engine model dir test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+rem GATE 2g: the MAIN side must read the model dir at USE time, not hold an
+rem   import-time copy. Regression for #47: after switching the model dir, the
+rem   picker still opened at the old dir and the notification printed the old dir.
+echo [TEST] main-side model dir (use-time, not a frozen copy) ...
+"%PY%" tests\test_main_model_dir.py
+if errorlevel 1 (
+  echo [ERROR] main-side model dir test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+rem GATE 2h: the update script's polling matcher must have DISCRIMINATING POWER.
+rem   Regression for the bare-name `find`. A bare name resolves by PATH ORDER, so the
+rem   outcome flips with the environment (measured, same probe, two contexts):
+rem     * Git-Bash-derived PATH -> Git's GNU find first -> returns 1 whether the
+rem       process runs or not -> zero discriminating power, the "wait for the old
+rem       process to exit" loop never waited;
+rem     * registry-merged PATH (what an explorer-launched app, and the apply.bat it
+rem       spawns, really inherit) -> System32 find first -> correct.
+rem   i.e. PATH-ORDER-dependent LATENT defect, not a universally broken one. The fix
+rem   is an absolute path so the outcome no longer depends on PATH order. This test
+rem   feeds two poll files and requires the two exit codes to DIFFER.
+echo [TEST] update poll matcher (discriminating power) ...
+"%PY%" tests\test_poll_matcher.py
+if errorlevel 1 (
+  echo [ERROR] update poll matcher test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+set "LOCAL_SPEAK2TEXT_DATA_DIR="
+if exist "%CD%\build\test-data" rmdir /s /q "%CD%\build\test-data"
+
 rem ---------------------------------------------------------------------------
 rem GATE 3: pipeline selftest with the default model (real ASR roundtrip)
+rem
+rem F11/D12 pin: the toolchain must not share ANY on-disk file with a resident
+rem instance. Without it the selftest writes into the user's live
+rem %LOCALAPPDATA%\local-speak2text\ (user's rule: the build must never affect
+rem the running service). Same pin as the frozen smoke below.
+rem CONFIG is deliberately NOT pinned: the selftest prints where the model dir
+rem came from, and pinning the config would hide the user's real state.
 rem ---------------------------------------------------------------------------
+set "LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\build\selftest-data"
 echo [TEST] pipeline selftest ...
 "%PY%" src\pipeline.py
-if errorlevel 1 (
+set SELFTEST_RC=%errorlevel%
+set "LOCAL_SPEAK2TEXT_DATA_DIR="
+if exist "%CD%\build\selftest-data" rmdir /s /q "%CD%\build\selftest-data"
+if not "%SELFTEST_RC%"=="0" (
   echo [ERROR] pipeline selftest failed.
   if not defined NOPAUSE pause
   exit /b 1

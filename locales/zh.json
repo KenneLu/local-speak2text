@@ -65,6 +65,8 @@
   "status_listening_cont": "● 持续聆听中... 再次 Ctrl+空格 结束，Esc 取消",
   "status_listening_hold": "● 正在聆听... 松开右 Ctrl 结束",
   "status_recognizing": "识别中...",
+  "smoke_model_dir_missing": "模型目录不存在: %s",
+  "smoke_mutex_invalid": "单实例互斥体名非法: %s",
   "tray_idle": "%s - 就绪",
   "tray_load_failed": "%s - 模型加载失败",
   "tray_loading": "%s - 正在加载模型...",

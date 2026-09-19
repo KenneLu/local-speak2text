@@ -17,13 +17,13 @@
 main() 调 warn_duplicate_instance() 弹**模态** MessageBox，测试会永久挂住。
 """
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
 
 # 实例隔离：必须在 import paths/main 之前重定向数据根与配置
-_TMP = tempfile.mkdtemp(prefix="l-s2t-startup-")
+_TMP = scratch_dir("l-s2t-startup-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 # 注：模板 tray_kit 的单实例守卫没有"多开豁免"开关（旧内联版那个开关已随守卫
@@ -157,6 +157,21 @@ check("update pending handled", CALLS["pending"] == 1, "calls=%s" % CALLS["pendi
 check("autostart self-heal called", CALLS["autostart"] == 1, "calls=%s" % CALLS["autostart"])
 check("log stayed inside isolated data dir", _TMP in str(LOG_PATH), str(LOG_PATH))
 
-shutil.rmtree(_TMP, ignore_errors=True)
+# ---------- C-29：交给模板件的 log 必须是 print 形态 ----------
+# main.log 被 `log=log` 交给 tray_kit / autostart / update_helper，这些模板件按 print
+# 形态调用（`log("update staged:", staged, "->", target)`）。单参包装在这里会直接
+# TypeError——而且是在**模板件的帧里**抛出，日志里的证据往往被工具侧的 try 吞掉。
+# 两参调用 + 断言文案真的落进日志，钉住"能收可变参数"且"确实转发了"。
+try:
+    M.log("c29-probe", 42)
+    _c29_err = ""
+except TypeError as exc:
+    _c29_err = repr(exc)
+check("log accepts print-style varargs (C-29)", not _c29_err, _c29_err)
+_text2 = LOG_PATH.read_text(encoding="utf-8", errors="replace") if LOG_PATH.exists() else ""
+check("varargs log actually forwarded (space-joined)", "c29-probe 42" in _text2,
+      "log=%s" % LOG_PATH)
+
+check("temp dir cleaned up (no %TEMP% leak)", rmtree_cleanup(_TMP), str(_TMP))
 print("STARTUP PATH TEST " + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)
 sys.exit(1 if FAILS else 0)
