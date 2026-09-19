@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# TEMPLATE-LOCAL-OVERRIDE: 本仓加固 fork（#32 切到模板模块后整体删除）
 """升级检查与自动升级：GitHub Releases API（稳定安装位变体）。
 
 检查：GET {repo}/releases/latest，比对 tag 与 appconfig.VERSION，节流（默认 24h）。
@@ -38,8 +39,19 @@ CHECK_INTERVAL = 24 * 3600
 STATE = {"checked_for": "", "latest": "", "at": 0.0, "asset_url": "", "asset_size": 0}
 
 FAILED_MARKER_NAME = "update.failed"
-# 等旧进程退出的上限：120 次 × 约 1 秒（`ping -n 2` 节奏）——reme 实测值
+# 等旧进程退出的上限：**轮询次数** × **每拍毫秒**（两个数必须一起看，别把次数当秒）。
+#   `UPDATE_WAIT_LIMIT`   = 轮询次数
+#   `UPDATE_WAIT_TICK_MS` = 每拍睡眠毫秒（脚本里由 `powershell Start-Sleep` 实现）
+#   `UPDATE_WAIT_BUDGET_S`= 名义预算 = 次数 × 每拍 ÷ 1000（**下界**：每拍还要付 PowerShell 启动费）
+#     ⚠️ 它只是**默认那一对**的取值；渲染进 bat 的预算一律由 `build_apply_script` 从
+#     **实际传入的 `limit`** 现算，不得直接传这个常量（否则改了次数而预算文案不变）。
+# ⚠️ 2026-09-19 缺陷（家族五份都在）：节拍原是 `ping -n 2 127.0.0.1`，本意“睡 1 秒”，在**丢弃
+# loopback ICMP** 的机器上实测 **9.0 s/拍**（两次 4.5s 超时）→ 名义 120s 实际约 18 分钟，
+# 而 `:giveup` 还打印 "after 120s"——**日志说谎**。教训：等待/超时的单位假设**必须实测量过**；
+# 禁止 ping 当节拍已升级为机械判据 C-33。
 UPDATE_WAIT_LIMIT = 120
+UPDATE_WAIT_TICK_MS = 1000
+UPDATE_WAIT_BUDGET_S = UPDATE_WAIT_LIMIT * UPDATE_WAIT_TICK_MS // 1000
 
 
 def _repo_from_config(config_path):
@@ -190,11 +202,35 @@ rem NO PIPE HERE, on purpose: this script is spawned with DETACHED_PROCESS and h
 rem console; "tasklist | find" then NEVER RETURNS (find blocks on stdin forever) and the
 rem update silently never happens. tasklist writes a file; find reads that file.
 tasklist /fi "imagename eq {exe}" /nh > "%POLL%" 2>nul
-find /i "{exe}" "%POLL%" >nul
+rem ABSOLUTE PATH, never the bare name `find`: a bare name resolves by PATH order,
+rem so the answer flips with the environment. Measured in two contexts, one probe:
+rem   A) Git-Bash-derived PATH: `where find` hits Git's usr\bin\find.exe (GNU find)
+rem      first; GNU find stats `/i` and the image name as PATHS, so it returns 1
+rem      whether the process runs or not => `if errorlevel 1 goto gone` fires on the
+rem      FIRST tick, the wait loop never waits and :giveup is unreachable.
+rem   B) registry-merged PATH (what an explorer-launched app, and therefore this
+rem      script spawned by it, actually inherits): System32\find.exe is first, and
+rem      there the matcher is correct - 0 when the image name is present, 1 when
+rem      it is absent.
+rem So this is a PATH-ORDER-dependent LATENT defect, not a universally broken one.
+rem The absolute path makes the outcome independent of PATH order: Windows' find is
+rem the one this command line was written for. Correctness must not hinge on which
+rem `find` happens to come first. Check: tests/test_poll_matcher.py (two poll files;
+rem the two exit codes must DIFFER). NOTE: this template is written to disk as a
+rem .bat and must stay ASCII-only (C-22) - that is also why this is English.
+%SystemRoot%\System32\find.exe /i "{exe}" "%POLL%" >nul
 if errorlevel 1 goto gone
 set /a tries+=1
 if %tries% geq {limit} goto giveup
-ping -n 2 127.0.0.1 >nul
+rem Sleep one tick. NOT `ping -n 2 127.0.0.1`: that idiom means "1 second" only when
+rem loopback ICMP answers - on a machine that drops it, each tick costs 2 x 4.5s
+rem timeout = 9.0s (measured), so a nominal 120s budget really took ~18 minutes
+rem while the log still said "120s". Start-Sleep is ICMP-free; it does pay a
+rem PowerShell startup (~0.3s here, measured 1.29s per 1000ms tick), which is why
+rem the timeout line below reports a lower bound instead of a precise total.
+rem Spawned from a DETACHED_PROCESS bat, so the child has no console and no window
+rem appears (same reason `tasklist`/`find` in this file stay windowless).
+powershell -NoProfile -Command "Start-Sleep -Milliseconds {tick_ms}" >nul 2>nul
 goto wait
 :gone
 rem Intercept an empty/incomplete stage BEFORE touching the install dir. robocopy from a
@@ -252,7 +288,11 @@ rem clean up: the rolled-out BACKUP and the staged WORK are the recovery materia
 echo [{stamp}] NEW EXE MISSING AFTER COPY - not starting; kept WORK and BACKUP >> "%LOG%"
 goto cleanup_keep
 :giveup
-echo [{stamp}] aborted: {exe} still running after {limit}s >> "%LOG%"
+rem Report the poll count and the per-tick sleep, not a fake "seconds" figure: the
+rem real elapsed time is >= {limit} x {tick_ms}ms because every tick also pays a
+rem PowerShell startup. The old wording said "after 120s" while it had actually
+rem been waiting ~18 minutes - a log that lies is worse than no log.
+echo [{stamp}] aborted: {exe} still running after %tries% polls x {tick_ms}ms (nominal budget {budget_s}s, lower bound) >> "%LOG%"
 goto cleanup
 :cleanup
 rem Success path: drop the staged package (tens of MB) and the pending marker.
@@ -278,7 +318,13 @@ def build_apply_script(target_dir, stage_dir, work_dir, backup_dir, log_path,
         pending=pending_path, app=APP_ID, exe=exe_name,
         stage_exe=os.path.join(str(stage_dir), exe_name),
         newexe=os.path.join(str(target_dir), exe_name),
-        limit=limit, stamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+        # budget_s **必须由同一次渲染实际使用的 limit/tick 算出**。旧写法传的是模块常量
+        # `UPDATE_WAIT_BUDGET_S`，而次数用的是 `limit` 实参——于是 `limit=2` 会渲染出
+        # 「2 polls x 1000ms (nominal budget 120s)」这种**自相矛盾**的日志。
+        # 这正是本轮已立的口径：**日志里的数必须是被测过的数**（C-33 那次"日志说谎"的同族）。
+        limit=limit, tick_ms=UPDATE_WAIT_TICK_MS,
+        budget_s=limit * UPDATE_WAIT_TICK_MS // 1000,
+        stamp=time.strftime("%Y-%m-%d %H:%M:%S"),
     )
 
 
@@ -308,19 +354,32 @@ def failed_marker_path(update_dir=None):
 
 
 def pop_failed_update_note(update_dir=None, log=lambda *a: None):
-    """读一次"上次更新失败"的 marker，返回人话（无 marker 则空串），并删除 marker。"""
+    """读一次"上次更新失败"的 marker，返回人话（无 marker 则空串），并删除 marker。
+
+    **顺序：先算好文案 → 再报告 → 最后才删证据**（2026-09-19 修）。
+    旧写法把 `marker.unlink()` 与 `read_text()` 放在**同一个 try** 里，于是 unlink 抛
+    OSError（marker 被 Defender/索引器短暂锁住——本仓库实测过这类瞬时锁）会走 except
+    分支直接 `return ""`：**detail 明明已经读到了，用户却看不到升级失败提示**，
+    只因为"删证据"这一步失败。删不掉不该惩罚读者。
+    """
     marker = failed_marker_path(update_dir)
     try:
         if not marker.is_file():
             return ""
         detail = marker.read_text(encoding="utf-8", errors="replace").strip()
-        marker.unlink()
+        note = ("上次自动更新失败，已回退到原版本并保留现场；详见 update.log"
+                + (("（%s）" % detail) if detail else ""))
     except OSError as exc:
         log("failed-update marker read error:", exc)
         return ""
     log("previous update failed:", detail)
-    return ("上次自动更新失败，已回退到原版本并保留现场；详见 update.log"
-            + (("（%s）" % detail) if detail else ""))
+    # 最后一步、且独立 try：删不掉就留给下次启动再报一次——
+    # 比"吞掉提示"或"吞掉证据"都好。
+    try:
+        marker.unlink()
+    except OSError as exc:
+        log("failed-update marker not removed (will report again):", exc)
+    return note
 
 
 def prepare_update_cmd(staged_dir, target_dir=None, update_dir=None,
