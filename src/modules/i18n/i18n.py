@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# TEMPLATE-FROM: my-diy-tool-template/modules/i18n/i18n.py | TEMPLATE-VER: 2.1.0
+# TEMPLATE-FROM: my-diy-tool-template/modules/i18n/i18n.py | TEMPLATE-VER: 2.1.1
 """T5 · i18n v2 —— 机制与词表分离（数据驱动，蓝本 local-speak2text/i18n.py）。
 
 代码只管机制（回退/格式化/持久化/探测）；词条是**数据**：工具根目录
@@ -9,6 +9,11 @@
 
 2.1.0：locales 目录解析内置 + 模块导入即自动加载——工具侧零样板，import 即得词条。
 目录解析用**向上查找回退**（平铺与 src/modules 布局都命中），打包态回退 _MEIPASS。
+2.1.1：语言状态改由**访问器** `current_lang()` 暴露（`LANG` 降为内部实现）。
+原因：包 `__init__.py` 若 `from .i18n import *`，会把 `LANG` 拷成**静态副本**，
+于是 `i18n.init('en')` 之后从包读到仍是 'zh'，而 `t()` 已切到英文——读到过期语言
+的调用点（如菜单签名计算）会判定"无需重建"，出现"通知是英文、菜单还是中文"。
+消费方请读 `current_lang()`；`LANG` 仅保留兼容，勿在外部读取/写入。
 """
 import json
 import os
@@ -19,7 +24,7 @@ _BUILTIN_ZH = {"menu_quit": "退出", "menu_open_logs": "打开日志目录"}
 _BUILTIN_EN = {"menu_quit": "Quit", "menu_open_logs": "Open log folder"}
 
 TABLES = {"zh": dict(_BUILTIN_ZH), "en": dict(_BUILTIN_EN)}
-LANG = "zh"
+LANG = "zh"   # 内部实现：外部读 current_lang()，勿直接读/写（2.1.1）
 # 门禁 2（D1）断言的核心键集：词表必须能回答这些键
 KEY_MIN_SET = ("menu_quit", "menu_open_logs")
 
@@ -48,6 +53,15 @@ def init(language="auto"):
     if language == "auto":
         language = detect_system_lang()
     LANG = language if language in TABLES else "zh"
+
+
+def current_lang():
+    """当前语言（**推荐给消费者的唯一读法**；2.1.1 新增）。
+
+    状态经访问器暴露，不作为可变全局被外部读取——这样包门面无论怎么导入，
+    读到的都是子模块真值，而不是 `from .i18n import *` 拷出的死副本。
+    """
+    return LANG
 
 
 def t(key, *args, **kwargs):

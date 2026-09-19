@@ -13,9 +13,18 @@
 | 函数 | 说明 |
 |---|---|
 | `init(language="auto")` | `zh / en / auto`（auto 跟随 Windows UI 语言） |
+| **`current_lang()`** | **当前语言（推荐读法，2.1.1）**——切语言后立刻反映真值 |
 | `t(key, *args)` | 取词 + `%` 格式化 |
 | `load_language_from_config(cfg) / save_language_to_config(cfg, lang)` | 语言持久化进 config.json 的 `language` 字段 |
 | `detect_system_lang()` | Win32 UI 语言探测 |
+
+> **状态一律经访问器读取（2.1.1 硬性口径）**：`LANG` 是**内部实现**，外部请用
+> `current_lang()`。包门面（`modules/i18n/__init__.py`）**不做 `import *`**——那会把
+> `LANG` 拷成静态副本，`init('en')` 后从包读仍是旧值，而 `t()` 已是英文。
+> 症状：菜单签名算出来不变 → 切了语言**菜单不重建**（通知英文、菜单中文）。
+> 实现为"只绑函数 + PEP 562 `__getattr__` 委派子模块"，故 `LANG` 每次读取都取真值。
+> 回归：`python my-diy-tool-template/sync_check.py --selftest` 的 **D 组**（D1–D6）——
+> **必须从包命名空间读**（`i18n.LANG`）才测得出；只读子模块会全绿。
 
 ## 采纳步骤
 

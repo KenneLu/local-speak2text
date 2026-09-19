@@ -32,9 +32,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Version: read from appconfig.py so the script and the app cannot drift apart
+rem Version: read from appconfig.py so the script and the app cannot drift apart.
+rem Robust parse: take everything after '=', drop quotes, then keep the FIRST
+rem space-delimited token. A trailing comment on the VERSION line can therefore
+rem never leak into the version string / release path (same fix in the template).
 set VERSION=
-for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%~b
+for /f "tokens=2 delims==" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%a
+for /f "tokens=1" %%a in ("%VERSION:"=%") do set VERSION=%%a
 if not defined VERSION (
   echo [ERROR] Cannot read VERSION from src\modules\appconfig\appconfig.py.
   if not defined NOPAUSE pause
@@ -56,12 +60,31 @@ if exist "%RELEASE_DIR%" (
   exit /b 1
 )
 
-rem No running instance: files would be locked and two trays would fight
-tasklist /fo csv 2>nul | findstr /i /c:"%APPNAME%" >nul
-if not errorlevel 1 (
-  echo [ERROR] %APPNAME% is running. Exit it from the tray before building.
+rem ---------------------------------------------------------------------------
+rem Running-instance guard (D1-02, refined 2026-09-19): refuse ONLY when the live
+rem instance runs FROM THE TARGET release dir. Building a DIFFERENT version dir is
+rem safe - files differ, the frozen smoke pins _CONFIG/_DATA_DIR and never takes
+rem the mutex. What IS unsafe is deleting/overwriting the dir a live instance runs
+rem from (2026-09-19 incident: release\...-1.4.1 was hollowed out while a tray
+rem instance was running inside it). The same guard must precede any manual rm.
+rem ---------------------------------------------------------------------------
+set "RUNNING_EXE="
+for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "(Get-Process -Name %APPNAME% -ErrorAction SilentlyContinue).Path | Select-Object -First 1"`) do set "RUNNING_EXE=%%p"
+set "RUNNING_DIR="
+if defined RUNNING_EXE for %%d in ("%RUNNING_EXE%") do set "RUNNING_DIR=%%~dpd"
+if defined RUNNING_DIR if "%RUNNING_DIR:~-1%"=="\" set "RUNNING_DIR=%RUNNING_DIR:~0,-1%"
+set "TARGET_DIR="
+for %%d in ("%CD%\%RELEASE_DIR%") do set "TARGET_DIR=%%~fd"
+if defined RUNNING_DIR if /i "%RUNNING_DIR%"=="%TARGET_DIR%" (
+  echo [ERROR] A %APPNAME% instance is running FROM %RELEASE_DIR%.
+  echo [ERROR] Exit it from the tray before building that directory.
   if not defined NOPAUSE pause
   exit /b 1
+)
+if defined RUNNING_DIR echo [INFO] %APPNAME% running from "%RUNNING_DIR%" - not the target dir, build continues.
+if not defined RUNNING_EXE (
+  tasklist /fo csv 2>nul | findstr /i /c:"%APPNAME%.exe" >nul
+  if not errorlevel 1 echo [WARN] %APPNAME%.exe is running but its path could not be read; target dir not verified.
 )
 
 rem ---------------------------------------------------------------------------
@@ -106,6 +129,18 @@ echo [TEST] startup path ...
 "%PY%" tests\test_startup_path.py
 if errorlevel 1 (
   echo [ERROR] startup path test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+rem GATE 2c: language switch must rebuild the tray menu. Regression for the
+rem template i18n package copying LANG into its namespace: the notification
+rem switched to English while the menu stayed Chinese. The test reads the
+rem language from the PACKAGE and asserts _menu_signature() changes.
+echo [TEST] i18n menu refresh ...
+"%PY%" tests\test_i18n_menu.py
+if errorlevel 1 (
+  echo [ERROR] i18n menu refresh test failed.
   if not defined NOPAUSE pause
   exit /b 1
 )

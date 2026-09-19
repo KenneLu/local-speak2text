@@ -307,7 +307,7 @@ class Tray:
     def _menu_signature(self):
         """菜单上会"显示出来"的状态；只有它变了才值得重建。"""
         return (
-            i18n.LANG,
+            i18n.current_lang(),
             self.update_ready is not None,
             bool(load_config_dict().get("auto_gain", True)),
             is_autostart_enabled(),
@@ -372,7 +372,7 @@ class Tray:
         self.notify(i18n.t("notify_gain_on") if cfg["auto_gain"] else i18n.t("notify_gain_off"))
 
     def _toggle_language(self, icon, item):
-        new_lang = "en" if i18n.LANG == "zh" else "zh"
+        new_lang = "en" if i18n.current_lang() == "zh" else "zh"
         i18n.init(new_lang)
         i18n.save_language_to_config(CONFIG_PATH, new_lang)
         self.notify(i18n.t("notify_lang_switched"))

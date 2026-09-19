@@ -5,6 +5,10 @@ The tagging convention matches the versions in this file.
 
 ## Unreleased
 
+> 1.4.1 was never released: its single-instance root-cause fix is merged into this
+> section and `VERSION` is rolled back to the last released version 1.4.0
+> (STANDARDS G3 item 7: the version number changes only as part of a release).
+
 - **Mechanism code now converges on the family template** (`my-diy-tool-template`
   modules, byte-identical copies): `icons` 2.0.0, `log_kit` 1.0.2, `paths` 1.1.2,
   `autostart` 1.1.1, `tray_kit` 2.0.1, plus the `appconfig` parameter file.
@@ -19,6 +23,13 @@ The tagging convention matches the versions in this file.
   proceed, never skipping confirmation.
 - Tray menu rebuilds go through `tray_kit.MenuSignature` with a menu-open
   probe, so a rebuild can no longer yank an open right-click menu away.
+- **Fixed: switching language did not refresh the tray menu** (user-reported).
+  `main.py` read the package-level `i18n.LANG`, which the old `from .i18n import *`
+  had copied into the package namespace — the value stayed `zh`, the menu
+  signature never changed, and the menu stayed Chinese while notifications
+  switched to English. Now reads `i18n.current_lang()` (template i18n 2.1.1,
+  which no longer copies mutable state); pinned by `tests/test_i18n_menu.py`
+  and `build.bat` GATE 2c.
 - **New `--quit`**: asks a running instance to exit without the confirm
   dialog (request file lives under the redirectable data dir).
 - Icon graphics are single-sourced from `appconfig.ICON_DRAW` (runtime tray
@@ -29,9 +40,6 @@ The tagging convention matches the versions in this file.
   are therefore `LOCAL_SPEAK2TEXT_CONFIG` / `LOCAL_SPEAK2TEXT_DATA_DIR`
   (previously written without the underscore — a one-off name that is now
   retired, CONFORMANCE NAME-10).
-
-## 1.4.1
-
 - **Fixed: the exe could not start at all since 1.2.0.** The single-instance
   mutex was named `Local\<app>\SingleInstance`; a named kernel object may not
   contain a second backslash after the `Local\` namespace prefix, so

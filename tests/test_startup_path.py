@@ -10,6 +10,11 @@
   ② 启动序列真的走到了 `log_kit.log("startup ...")`；
   ③ `process_pending_update` 与 `migrate_autostart` 都被调用（骨架没被跳过）；
   ④ 日志落在隔离数据区（实例隔离 F11/D12），不碰用户真实 AppData。
+
+⚠️ 守卫与重复启动提示**在下方被打桩**：本测试测的是"守卫放行之后的启动序列"，
+守卫自身行为由 test_single_instance.py 覆盖。生产互斥体是内核对象、不受数据根
+重定向影响（SINGLE-08），不打桩的话——用户托盘实例在跑时真守卫返回 False，
+main() 调 warn_duplicate_instance() 弹**模态** MessageBox，测试会永久挂住。
 """
 import os
 import shutil
@@ -100,6 +105,17 @@ M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
 M.process_pending_update = lambda: CALLS.__setitem__("pending", CALLS["pending"] + 1)
 M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
+
+# 本测试只验证"守卫放行后启动序列完整走通"，不验证守卫本身（那是
+# test_single_instance.py 的职责）。因此这里把守卫打桩为"放行"，并把重复启动
+# 提示打成 no-op：
+#   * 生产互斥体是**内核对象**，<APP>_DATA_DIR 隔离不了它（SINGLE-08）——
+#     用户的托盘实例在跑时，真守卫会返回 False，main() 随即调
+#     warn_duplicate_instance() → MessageBoxW 是**模态阻塞**对话框，测试会
+#     永久挂住（比失败更糟：CI 挂死而不是变红）。
+#   * 打桩后本测试**不依赖生产互斥体是否空闲**，实例在跑也能快速通过。
+M.tray_kit.acquire_single_instance = lambda *_a, **_k: True
+M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 
 rc = M.main()
 
