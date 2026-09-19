@@ -117,7 +117,33 @@ M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autost
 M.tray_kit.acquire_single_instance = lambda *_a, **_k: True
 M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 
+# ---------- 真实退出流程：待应用的更新必须在 finally 里被真正拉起 ----------
+# 用真实 launch_pending_cmd（不打断言）：脚本写一个 marker，证明退出收尾确实执行了替换脚本，
+# 且是无控制台/脱离父进程地拉起（旗标断言见 tests/test_update_safety.py D1）。
+_launch_marker = Path(_TMP) / "launched.txt"
+_launch_bat = Path(_TMP) / "fake_apply.bat"
+_launch_bat.write_text('@echo off\r\necho ok > "%~dp0launched.txt"\r\n',
+                       encoding="ascii", newline="")
+_RealController = M.Controller
+
+
+class _ControllerWithPending(_RealController):
+    def __init__(self, overlay, engine):
+        super().__init__(overlay, engine)
+        self.update_cmd_path = str(_launch_bat)   # 模拟"已下载、退出时应用"
+        self.quit_apply_update = True
+
+
+M.Controller = _ControllerWithPending
+
 rc = M.main()
+
+import time  # noqa: E402
+_deadline = time.time() + 15.0
+while time.time() < _deadline and not _launch_marker.exists():
+    time.sleep(0.2)
+check("exit path really launched the pending update script", _launch_marker.exists(),
+      str(_launch_marker))
 
 text = LOG_PATH.read_text(encoding="utf-8", errors="replace") if LOG_PATH.exists() else ""
 startup = [line for line in text.splitlines() if "startup" in line]

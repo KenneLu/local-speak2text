@@ -1040,7 +1040,14 @@ def main():
         quit_stop.set()
         if ctrl.update_cmd_path and ctrl.quit_apply_update:
             # 无控制台、脱离父进程地拉起替换脚本（旧 os.system('start /min') 会闪黑框）
-            launch_pending_cmd(ctrl.update_cmd_path, log=log)
+            if not launch_pending_cmd(ctrl.update_cmd_path, log=log):
+                # 拉不起来不能无声退出：pending 还在，下次启动会重试（update.pending.json），
+                # 但用户此刻应当知道"这次更新没装上"。
+                log("pending update NOT launched; next start will retry")
+                try:
+                    tray.notify(i18n.t("update_launch_failed"), APP_NAME)
+                except Exception:
+                    pass
         ctrl.hook.stop()
         tray.stop()
 

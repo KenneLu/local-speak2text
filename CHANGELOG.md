@@ -63,7 +63,12 @@ The tagging convention matches the versions in this file.
     `os.system('start "" /min ...')`, which goes through `cmd` and flashes a
     console window on the desktop. It now uses `launch_pending_cmd()` —
     `CREATE_NO_WINDOW | DETACHED_PROCESS`, the reme form — so the script
-    outlives the parent without any visible window.
+    outlives the parent without any visible window. If the launch fails the app
+    logs it and notifies the user (the pending file stays, so the next start
+    retries) instead of exiting silently.
+    `tests/test_startup_path.py` now drives a **real exit flow** with a pending
+    update staged and asserts the script was actually launched (marker file),
+    on top of the flag assertions in `test_update_safety.py`.
   * New `tests/test_update_safety.py` (build.bat **GATE 2d**): the rendered
     `.bat` is really executed for both success and a failure injection
     (`robocopy` rc=16), asserting "failure starts the old version, never the new

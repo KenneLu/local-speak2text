@@ -74,6 +74,7 @@
   "update_checking": "Checking for updates...",
   "update_download_fail": "Update download failed: %s",
   "update_downloading": "Downloading update %s ...",
+  "update_launch_failed": "The update installer could not be started; it will be retried on next launch.",
   "update_latest": "Already up to date (%s)",
   "update_new": "New version %s available (current %s)",
   "update_no_repo": "Update source not configured (update_repo)",

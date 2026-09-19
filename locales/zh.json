@@ -74,6 +74,7 @@
   "update_checking": "正在检查更新...",
   "update_download_fail": "下载更新失败: %s",
   "update_downloading": "正在下载更新 %s ...",
+  "update_launch_failed": "更新安装脚本未能启动，将在下次启动时重试。",
   "update_latest": "已是最新版本 %s",
   "update_new": "发现新版本 %s（当前 %s）",
   "update_no_repo": "未配置更新源（update_repo）",
