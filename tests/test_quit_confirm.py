@@ -36,12 +36,10 @@ def phase2():
     assert tops, "confirm dialog missing"
     assert not state["exited"], "should NOT exit before confirmation"
     print("phase1: dialog shown, not exited", flush=True)
-    # 第二步：点「取消」-> 弹窗关闭，仍不退出
-    buttons = [b for t in tops for b in t.winfo_children()
-               if isinstance(b, __import__("tkinter").Frame)
-               for b in b.winfo_children() if isinstance(b, __import__("tkinter").Button)]
-    cancel_btn = buttons[1]
-    cancel_btn.invoke()
+    # 第二步：按 Esc -> 弹窗关闭，仍不退出。
+    # 这是回归点：旧内联 _confirm_quit 没有 <Escape> 绑定，GUI 实测按 Esc 关不掉；
+    # 模板 tray_kit.confirm_quit_dialog 有该绑定。
+    tops[0].event_generate("<Escape>")
     overlay.root.after(100, phase3)
 
 

@@ -6,10 +6,11 @@
 双击 exe 永远弹"已在运行"，工具完全打不开。--smoke 又绕过了守卫，所以
 冒烟 / 门禁 / review 三层全绿也没拦住。本文件就是补上的那条断言（D3.2）。
 
-断言四条：
+守卫实现已收敛到模板 modules/tray_kit（T7）；断言语义一条不丢：
   ① 互斥体名合法（命名空间前缀之后无第二个反斜杠）且内核真的接受；
   ② 旧非法名必须仍然失败（把根因钉死，防止有人改回去）；
-  ③ 守卫正常时：首拍放行、第二拍拦下；
+  ③ 守卫正常时：首拍放行、第二拍拦下，且 tray_kit 派生的名字 == main.MUTEX_NAME
+     （--smoke 的合法性探针必须与运行期守卫问同一个名字）；
   ④ 守卫自身出错时必须**放行**（失败方向为打开，否则工具会变砖）。
 """
 import ctypes
@@ -23,10 +24,10 @@ from pathlib import Path
 # 否则守卫的日志会写进用户真实的 %LOCALAPPDATA%。
 _TMP = tempfile.mkdtemp(prefix="l-s2t-test-")
 os.environ["LOCALSPEAK2TEXT_DATA_DIR"] = _TMP
-os.environ.pop("LST_ALLOW_MULTI", None)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
+from modules import tray_kit  # noqa: E402
 
 FAILS = []
 
@@ -38,7 +39,11 @@ def check(name, ok, detail=""):
         FAILS.append(name)
 
 
-# ① 名字合法
+def _quiet(_msg):
+    pass
+
+
+# ① 名字合法（与 tray_kit.acquire_single_instance 的派生约定一致）
 check("mutex name has no second backslash",
       M.MUTEX_NAME.count("\\") == 1, M.MUTEX_NAME)
 check("mutex name is Local-scoped", M.MUTEX_NAME.startswith("Local\\"))
@@ -61,9 +66,19 @@ check("old illegal name still fails (root cause pinned)", not bad and bad_err ==
 if bad:
     k32.CloseHandle(bad)
 
-# ③ 守卫正常：首拍放行，第二拍（同进程重入 = 已有实例）拦下
-check("first acquire passes", M.acquire_single_instance() is True)
-check("second acquire is refused", M.acquire_single_instance() is False)
+# ③ 守卫正常：首拍放行；tray_kit 用的名字就是 MUTEX_NAME（反向占用探测）；
+#    第二拍（同进程重入 = 已有实例）拦下
+check("first acquire passes",
+      tray_kit.acquire_single_instance(M.APP_ID, log=_quiet) is True)
+ctypes.set_last_error(0)
+probe = k32.CreateMutexW(None, False, M.MUTEX_NAME)
+probe_err = ctypes.get_last_error()
+if probe:
+    k32.CloseHandle(probe)
+check("tray_kit guard holds the pinned name (no naming drift)", probe_err == 183,
+      "err=%s" % probe_err)
+check("second acquire is refused",
+      tray_kit.acquire_single_instance(M.APP_ID, log=_quiet) is False)
 
 # ④ 失败方向：守卫自身出错必须放行
 _real_win_dll = ctypes.WinDLL
@@ -75,7 +90,8 @@ def _boom(*_args, **_kwargs):
 
 ctypes.WinDLL = _boom
 try:
-    check("guard failure fails OPEN", M.acquire_single_instance() is True)
+    check("guard failure fails OPEN",
+          tray_kit.acquire_single_instance(M.APP_ID, log=_quiet) is True)
 finally:
     ctypes.WinDLL = _real_win_dll
 

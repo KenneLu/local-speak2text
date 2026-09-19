@@ -23,12 +23,12 @@ from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox
 
 import pystray
-from PIL import Image, ImageDraw
 
-from modules import i18n, log_kit   # noqa: E402
-from modules.appconfig import APP_ID, APP_NAME, VERSION
+from modules import i18n, log_kit, tray_kit   # noqa: E402
+from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
+                               ICON_DRAW, VERSION)
 from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
-from modules.paths import LOG_DIR, RUN_DIR, process_pending_update
+from modules.paths import LOG_DIR, RUN_DIR, USER_DATA_DIR, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
 from pipeline import (
@@ -56,10 +56,6 @@ VK_ESCAPE = 0x1B
 VK_V = 0x56
 KEYEVENTF_KEYUP = 0x0002
 DEBUG = os.environ.get("LST_DEBUG", "") == "1"
-
-COLOR_IDLE = (30, 120, 230, 255)      # 空闲：蓝色
-COLOR_RECORDING = (240, 140, 20, 255) # 录制中：橙色
-
 
 def dprint(*args):
     if DEBUG:
@@ -136,59 +132,15 @@ def _install_excepthooks():
     )
 
 
-# ---------- 单实例 ----------
+# ---------- 单实例（T7 tray_kit；本文件只留 --smoke 的合法性探针） ----------
 
 # 命名内核对象：命名空间前缀 `Local\` 之后**不允许再出现反斜杠**。
 # 1.2.0~1.4.0 写成 r"Local\%s\SingleInstance"（多一个反斜杠）→ CreateMutexW 返回
 # NULL + err=3(ERROR_PATH_NOT_FOUND)，而旧代码把 NULL 当"已有实例"→ 每次启动都误报
-# "已在运行"，工具完全打不开。命名口径与模板 modules/tray_kit 保持一致。
+# "已在运行"，工具完全打不开。运行期守卫改由 tray_kit 派生同名互斥体；
+# test_single_instance 会真实占用一次、再用本名字探测，把「派生名 == 本名字」钉死。
 MUTEX_NAME = r"Local\%s-single-instance" % APP_ID
 ERROR_ALREADY_EXISTS = 183
-_MUTEX_HANDLE = None
-
-
-def acquire_single_instance():
-    """命名互斥体保证只有一个托盘实例（house 标准，同 reme-helper / 模板 tray_kit）。
-
-    双开会抢键盘钩子和音频设备，还会各写一份配置。测试/特殊场景设
-    LST_ALLOW_MULTI=1 可跳过。
-
-    **失败方向（D3.2）：守卫自身出错一律放行**——宁可多开一个，也不能打不开。
-    只有"确认另一个实例正持有同名互斥体"（ERROR_ALREADY_EXISTS）才返回 False。
-    """
-    global _MUTEX_HANDLE
-    if os.environ.get("LST_ALLOW_MULTI") == "1":
-        return True
-    if os.name != "nt":
-        return True
-    import ctypes
-
-    try:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateMutexW.restype = ctypes.c_void_p
-        ctypes.set_last_error(0)   # 清掉陈旧 last-error，否则可能把上一次的 183 读成"已存在"
-        handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    except Exception as exc:       # 守卫不可用：放行
-        log("single-instance guard unavailable (%s); continuing" % exc)
-        return True
-    if not handle:                 # 创建失败 ≠ 已有实例
-        log("single-instance guard failed (err=%s); continuing"
-                    % ctypes.get_last_error())
-        return True
-    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
-        kernel32.CloseHandle(handle)
-        log("another instance holds %s; this launch cancels" % MUTEX_NAME)
-        return False
-    _MUTEX_HANDLE = handle         # 故意持有到进程结束，不能提前关闭
-    return True
-
-
-def warn_duplicate_instance():
-    """重复启动提示：托盘里已经有一个在跑，本实例直接退出。"""
-    import ctypes
-
-    ctypes.windll.user32.MessageBoxW(
-        0, i18n.t("dup_running") % APP_NAME, APP_NAME, 0x40)
 
 
 def mutex_name_is_valid():
@@ -235,16 +187,52 @@ def save_config_dict(cfg):
 # ---------- 托盘图标 ----------
 
 def make_icon_image(fill=COLOR_IDLE, size=64):
-    """托盘图标：与 icons.py 同一套麦克风设计（icons.draw_mic 的本地快实现）。"""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    s = size / 64.0
-    d.rounded_rectangle([22*s, 8*s, 42*s, 38*s], radius=10*s, fill=fill)
-    for y in (15, 21, 27):
-        d.rectangle([26*s, y*s, 38*s, (y+2)*s], fill=(255, 255, 255, 255))
-    d.arc([18*s, 28*s, 46*s, 56*s], start=0, end=180, fill=fill, width=max(2, round(4*s)))
-    d.rectangle([30*s, 46*s, 34*s, 55*s], fill=fill)
-    return img
+    """托盘图标：图形唯一来源是 appconfig.ICON_DRAW（与构建期 ico 同一套设计）。"""
+    return ICON_DRAW(size, fill=fill)
+
+
+GUI_INMENUMODE = 0x00000004
+
+
+def menu_is_open():
+    """系统弹出菜单是否正开着（E2-09）。
+
+    菜单开着时重建菜单会把菜单销毁重造（pystray 的 update_menu 是
+    DestroyMenu+CreatePopupMenu），表现就是"鼠标滑着滑着突然失焦"——所以先问一句。
+    探测：菜单模态标记 GUI_INMENUMODE 挂在调用 TrackPopupMenu 的那个线程上，
+    遍历本进程线程去问；再以"前台窗口是系统菜单类 #32768"兜底。探测失败当没开着。
+    """
+    if os.name != "nt":
+        return False
+    try:
+        from ctypes import wintypes
+
+        class GUITHREADINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                        ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
+                        ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
+                        ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
+                        ("rcCaret", wintypes.RECT)]
+
+        for thread in threading.enumerate():
+            tid = getattr(thread, "native_id", None)
+            if not tid:
+                continue
+            info = GUITHREADINFO()
+            info.cbSize = ctypes.sizeof(GUITHREADINFO)
+            if not user32.GetGUIThreadInfo(int(tid), ctypes.byref(info)):
+                continue
+            if info.flags & GUI_INMENUMODE:
+                return True
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            name = ctypes.create_unicode_buffer(32)
+            user32.GetClassNameW(hwnd, name, 32)
+            if name.value == "#32768":
+                return True
+        return False
+    except Exception:   # 探测失败就当没开着
+        return False
 
 
 class Tray:
@@ -254,6 +242,10 @@ class Tray:
         self.controller = controller
         self.update_ready = None  # (latest,) 下载就绪前=可更新版本；None=无更新
         self.status_text = i18n.t("tray_loading") % APP_NAME  # 菜单第①段信息行
+        self._stop = threading.Event()
+        # E2-09：签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
+        self._menu_sig = tray_kit.MenuSignature(
+            self.rebuild, menu_is_open=menu_is_open, log=log)
         self.icon = pystray.Icon(
             APP_NAME,
             make_icon_image(),
@@ -305,16 +297,41 @@ class Tray:
         )
 
     def rebuild(self):
+        """强制重建菜单（MenuSignature 的落地动作）。"""
         try:
             self.icon.menu = self._build_menu()
             self.icon.update_menu()
         except Exception:
             pass
 
+    def _menu_signature(self):
+        """菜单上会"显示出来"的状态；只有它变了才值得重建。"""
+        return (
+            i18n.LANG,
+            self.update_ready is not None,
+            bool(load_config_dict().get("auto_gain", True)),
+            is_autostart_enabled(),
+        )
+
+    def refresh(self):
+        """签名驱动重画：菜单开着时自动推迟，由 _menu_refresh_loop 补画。"""
+        self._menu_sig.update(self._menu_signature())
+
+    def _menu_refresh_loop(self):
+        """1.5s 补画拍：只补"菜单开着时被推迟"的重画（tray_kit 三循环之②）。"""
+        while not self._stop.wait(1.5):
+            try:
+                self.refresh()
+                self._menu_sig.flush_deferred()
+            except Exception:
+                pass
+
     def start(self):
         self.icon.run_detached()
+        threading.Thread(target=self._menu_refresh_loop, daemon=True).start()
 
     def stop(self):
+        self._stop.set()
         try:
             self.icon.stop()
         except Exception:
@@ -359,7 +376,7 @@ class Tray:
         i18n.init(new_lang)
         i18n.save_language_to_config(CONFIG_PATH, new_lang)
         self.notify(i18n.t("notify_lang_switched"))
-        self.rebuild()
+        self.refresh()
 
     def _check_update(self, icon, item):
         def worker():
@@ -567,6 +584,7 @@ class Controller:
         self.exit_requested = False
         self.tray = None
         self.update_cmd_path = None
+        self.quit_apply_update = True   # 退出确认框勾选项的最终值（默认沿用既有行为）
         self._bench_running = False
         self._bench_win = None
         self.hook = KeyboardHook(on_down=self._on_down, on_up=self._on_up)
@@ -716,12 +734,12 @@ class Controller:
             self._choose_model_dir()
         elif kind == "rebuild_tray":
             if self.tray is not None:
-                self.tray.rebuild()
+                self.tray.refresh()
         elif kind == "update_found":
             latest = ev[1]
             if self.tray is not None:
                 self.tray.update_ready = latest
-                self.tray.rebuild()
+                self.tray.refresh()
             self.notify(i18n.t("update_new") % (latest, VERSION))
         elif kind == "update_status":
             self.notify(ev[1])
@@ -885,35 +903,41 @@ class Controller:
         top.geometry("+%d+%d" % ((sw - 640) // 2, max(30, (sh - 480) // 3)))
 
     def _confirm_quit(self):
-        """退出二次确认：用户点了确认才真正退出；关窗/取消都不退出。"""
-        top = tk.Toplevel(self.overlay.root)
-        top.title(i18n.t("quit_confirm_title"))
-        top.resizable(False, False)
-        top.attributes("-topmost", True)
-        lbl = tk.Label(top, text=i18n.t("quit_confirm_body"),
-                       font=("Microsoft YaHei", 10), justify="left")
-        lbl.pack(padx=18, pady=(16, 10))
-        btns = tk.Frame(top)
-        btns.pack(pady=(0, 14))
+        """退出二次确认（T7 tray_kit.confirm_quit_dialog；G4.1 条款 4 / G4.2 条款 5）。
 
-        def do_quit():
-            top.destroy()
-            self.ui_q.put(("exit",))
+        旧内联版没有 <Escape> 绑定——GUI 实测按 Esc 关不掉弹窗；模板版有。
+        降级链（禁止跳过确认）：富对话框 → 原生 askyesno → 放行且默认沿用勾选。
+        勾选项 = 退出后是否自动安装已下载的更新；勾选动作即落盘（点取消也留存）。
+        """
+        cfg = load_config_dict()
+        checked = bool(cfg.get("quit_apply_update", True))
 
-        def cancel():
-            top.destroy()
+        def _persist(value):
+            c = load_config_dict()
+            c["quit_apply_update"] = bool(value)
+            save_config_dict(c)
 
-        yes = tk.Button(btns, text=i18n.t("quit_confirm_yes"), command=do_quit,
-                        width=10, bg="#E5534B", fg="#FFFFFF", relief="flat")
-        no = tk.Button(btns, text=i18n.t("quit_confirm_no"), command=cancel, width=10)
-        yes.pack(side="left", padx=8)
-        no.pack(side="left", padx=8)
-        no.focus_set()
-        top.protocol("WM_DELETE_WINDOW", cancel)
-        top.update_idletasks()
-        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
-        top.geometry("+%d+%d" % ((sw - top.winfo_width()) // 2, (sh - top.winfo_height()) // 2))
-        top.grab_set()  # 模态：确认期间托盘重复点击不会再叠加弹窗
+        choice = None
+        try:
+            choice = tray_kit.confirm_quit_dialog(
+                APP_NAME, i18n.t("quit_confirm_cleanup"), checked,
+                parent=self.overlay.root, on_change=_persist)
+        except Exception as exc:
+            log("quit dialog failed (%s: %s); falling back to native confirm"
+                % (type(exc).__name__, exc))
+            try:
+                go = messagebox.askyesno(APP_NAME, i18n.t("quit_confirm_body"),
+                                         parent=self.overlay.root)
+                choice = {"go": bool(go), "stop_service": checked}
+            except Exception as exc2:
+                log("native confirm failed (%s: %s); proceeding"
+                    % (type(exc2).__name__, exc2))
+                choice = {"go": True, "stop_service": checked}
+        if not choice or not choice.get("go"):
+            return
+        # 勾选状态已随勾选动作落盘；记住最终值供退出收尾决定是否执行更新替换
+        self.quit_apply_update = bool(load_config_dict().get("quit_apply_update", True))
+        self.ui_q.put(("exit",))
 
     def _set_recording(self, recording):
         if self.on_state_change:
@@ -959,8 +983,8 @@ def main():
     _install_excepthooks()
     # i18n 先于单实例守卫初始化：重复实例的提示框也要出正确的语言
     i18n.init(i18n.load_language_from_config(CONFIG_PATH))
-    if not acquire_single_instance():
-        warn_duplicate_instance()
+    if not tray_kit.acquire_single_instance(APP_ID, log=log):
+        tray_kit.warn_duplicate_instance(APP_NAME, hint=i18n.t("dup_hint"))
         return 0
     process_pending_update()
     migrate_autostart(log=log)
@@ -975,6 +999,17 @@ def main():
     tray.start()
     tray.set_title(i18n.t("tray_loading") % APP_NAME)
     tray.notify(i18n.t("notify_loading"))
+
+    # --quit 请求文件监视（tray_kit 三循环之③）：走与托盘退出同一条清理路径。
+    # 纪律（F11）：请求文件落在数据区，必须随 <APP>_DATA_DIR 重定向。
+    quit_stop = threading.Event()
+    threading.Thread(
+        target=tray_kit.quit_watch_loop,
+        args=(quit_stop, tray_kit.make_quit_request_path(USER_DATA_DIR),
+              lambda: ctrl.ui_q.put(("exit",))),
+        kwargs={"log": log},
+        daemon=True,
+    ).start()
 
     try:
         engine = AsrEngine()
@@ -1003,7 +1038,8 @@ def main():
         overlay.root.mainloop()
     finally:
         log("exit")
-        if ctrl.update_cmd_path:
+        quit_stop.set()
+        if ctrl.update_cmd_path and ctrl.quit_apply_update:
             os.system('start "" /min "%s"' % ctrl.update_cmd_path)
         ctrl.hook.stop()
         tray.stop()
@@ -1085,9 +1121,27 @@ def autotest(wav_path):
     print("AUTOTEST_TEXT:", result.get("text", ""))
 
 
+def request_quit():
+    """`--quit`：给运行中的实例留一个退出请求文件（T7 quit_watch_loop 消费）。
+
+    程序化退出路径**不经二次确认框**（EXIT-03）；请求文件在数据区，
+    随 <APP>_DATA_DIR 重定向，绝不会误伤用户常驻实例（F11）。
+    """
+    path = tray_kit.make_quit_request_path(USER_DATA_DIR)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("quit", encoding="utf-8")
+        return 0
+    except OSError as exc:
+        dprint("quit request failed:", exc)
+        return 1
+
+
 if __name__ == "__main__":
     if "--smoke" in sys.argv:
         sys.exit(smoke())
+    elif "--quit" in sys.argv:
+        sys.exit(request_quit())
     elif len(sys.argv) > 1 and sys.argv[1] == "--autotest":
         autotest(sys.argv[2])
     else:
