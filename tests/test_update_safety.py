@@ -84,7 +84,7 @@ check("sha256: real '<hash>  <name>' line passes",
 
 
 # ==================== B. 替换脚本真跑 ====================
-def _stage(root, stage_missing=False, install_empty=False):
+def _stage(root, stage_missing=False, install_empty=False, stage_empty=False):
     install = root / "install"
     stage = root / "stage"
     work = root / "work"
@@ -95,7 +95,7 @@ def _stage(root, stage_missing=False, install_empty=False):
     if not install_empty:
         (install / "probe.vbs").write_text(_probe_vbs("started-old.txt"), encoding="ascii")
         (install / "data-old.txt").write_text("old", encoding="utf-8")
-    if not stage_missing:
+    if not stage_missing and not stage_empty:
         (stage / "probe.vbs").write_text(_probe_vbs("started-new.txt"), encoding="ascii")
         (stage / "data-new.txt").write_text("new", encoding="utf-8")
     pending = root / "update.pending.json"
@@ -120,9 +120,11 @@ def _run_bat(root, p):
         exe_name="probe.vbs", limit=2)
     bat = root / "apply.bat"
     bat.write_text(text, encoding="ascii", newline="")
+    started = time.time()
     subprocess.run(["cmd.exe", "/c", str(bat)], cwd=str(root), timeout=60,
                    creationflags=CREATE_NO_WINDOW,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return time.time() - started
 
 
 def _bat_success(root):
@@ -146,9 +148,34 @@ def _bat_success(root):
     check("bat success: pending marker removed", not p["pending"].exists())
 
 
+def _lock_exclusive(path):
+    """以 share=0 独占打开文件；robocopy 读不到它 → 前向拷贝 rc>=8（真实注入）。"""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    GENERIC_READ, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL = 0x80000000, 3, 0x80
+    return k32.CreateFileW(str(path), GENERIC_READ, 0, None, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, None)
+
+
+def _unlock(handle):
+    import ctypes
+    ctypes.WinDLL("kernel32").CloseHandle(handle)
+
+
 def _bat_failure(root):
-    p = _stage(root, stage_missing=True)
-    _run_bat(root, p)
+    # Real rc>=8 injection: keep the staged payload readable, but hold one staged file
+    # exclusively so the forward copy cannot read it. The install dir stays intact and
+    # the snapshot restores cleanly, which exercises :install_failed -> restore -> start old.
+    p = _stage(root)
+    locked = p["stage"] / "locked.bin"
+    locked.write_bytes(b"x")
+    h = _lock_exclusive(locked)
+    try:
+        _run_bat(root, p)
+    finally:
+        _unlock(h)
     check("bat failure: new version NOT started",
           not _wait_for(p["install"] / "started-new.txt", 3.0))
     check("bat failure: previous version started after restore",
@@ -180,11 +207,36 @@ def _bat_failure_no_old(root):
           log_text[-100:].replace("\n", " | "))
 
 
+def _bat_empty_stage(root):
+    """空 STAGE（有目录、无 exe）：robocopy 会返回 rc=0（"没复制也没出错"）。
+
+    若只看 rc 就判成功，/purge 已把安装目录清空，随后 start 一个不存在的 exe 会弹
+    模态框、把无 console 的 detached 脚本永久卡死。正确行为：**在碰安装目录之前**就
+    识别出来——不拷、不启动、写 marker、保留现场，脚本正常退出。
+    """
+    p = _stage(root, stage_empty=True)
+    elapsed = _run_bat(root, p)
+    check("bat empty-stage: script returned (no modal hang)", elapsed < 20.0,
+          "%.1fs" % elapsed)
+    check("bat empty-stage: nothing started",
+          not (p["install"] / "started-new.txt").exists()
+          and not (p["install"] / "started-old.txt").exists())
+    check("bat empty-stage: install dir untouched (old payload still there)",
+          (p["install"] / "data-old.txt").exists()
+          and (p["install"] / "probe.vbs").exists())
+    check("bat empty-stage: failure marker written", p["failed"].exists())
+    check("bat empty-stage: pending kept for diagnosis", p["pending"].exists())
+    log_text = p["log"].read_text(encoding="utf-8", errors="replace")
+    check("bat empty-stage: log records the refusal", "STAGED EXE MISSING" in log_text,
+          log_text[-100:].replace("\n", " | "))
+
+
 _root_b = Path(tempfile.mkdtemp(prefix="l-s2t-bat-"))
 try:
     _bat_success(_root_b)
     _bat_failure(_root_b)
     _bat_failure_no_old(_root_b)
+    _bat_empty_stage(_root_b)
 finally:
     shutil.rmtree(_root_b, ignore_errors=True)
 

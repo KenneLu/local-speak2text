@@ -53,6 +53,12 @@ The tagging convention matches the versions in this file.
   * Fixed the staged-dir detection: our `release.yml` zips the package **flat**,
     so `UPDATE_DIR/<APP_ID>` never existed and `prepare_update_cmd` would have
     raised "staged exe missing" — the auto-update had never been run end to end.
+  * **An empty stage is intercepted before anything is touched.** `robocopy` from a
+    stage with no payload returns rc 0–7 ("nothing copied, no error"), so the old
+    code would call it success after `/purge` had already wiped the install dir —
+    and the following `start` on the now-missing exe pops a modal box in a
+    detached, console-less script (hangs forever). Now: no staged exe → don't
+    touch the install dir, write the marker, keep the staged files.
   * New `tests/test_update_safety.py` (build.bat **GATE 2d**): the rendered
     `.bat` is really executed for both success and a failure injection
     (`robocopy` rc=16), asserting "failure starts the old version, never the new

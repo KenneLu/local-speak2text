@@ -197,6 +197,11 @@ if %tries% geq {limit} goto giveup
 ping -n 2 127.0.0.1 >nul
 goto wait
 :gone
+rem Intercept an empty/incomplete stage BEFORE touching the install dir. robocopy from a
+rem dir with no payload returns 0-7 - i.e. "success" by rc - and /purge would WIPE the
+rem install dir; the old exe would be gone and the later start would hit a missing file,
+rem popping a modal box in this detached, console-less script: it hangs forever.
+if not exist "{stage_exe}" goto stage_invalid
 rem Snapshot the CURRENT install first; the previous BACKUP is NOT deleted here - it is
 rem the rollback source and is rotated only AFTER a copy that succeeded.
 if not exist "%TARGET%" mkdir "%TARGET%"
@@ -232,6 +237,12 @@ goto cleanup_keep
 :install_dead
 echo [{stamp}] RESTORE FAILED - not starting; snapshot kept at %SNAPSHOT% >> "%LOG%"
 goto cleanup_keep
+:stage_invalid
+rem Nothing was copied, so the install dir still holds the previous (working) version.
+rem Report the failure and keep the staged files as evidence for manual inspection.
+> "{failed}" echo update failed {stamp}: staged exe missing at %STAGE%
+echo [{stamp}] STAGED EXE MISSING - install dir untouched, not starting >> "%LOG%"
+goto cleanup_keep
 :giveup
 echo [{stamp}] aborted: {exe} still running after {limit}s >> "%LOG%"
 goto cleanup
@@ -257,6 +268,7 @@ def build_apply_script(target_dir, stage_dir, work_dir, backup_dir, log_path,
         target=target_dir, stage=stage_dir, work=work_dir, backup=backup_dir,
         snapshot=snapshot_dir, failed=failed_marker, log=log_path,
         pending=pending_path, app=APP_ID, exe=exe_name,
+        stage_exe=os.path.join(str(stage_dir), exe_name),
         newexe=os.path.join(str(target_dir), exe_name),
         limit=limit, stamp=time.strftime("%Y-%m-%d %H:%M:%S"),
     )
