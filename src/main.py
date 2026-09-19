@@ -28,8 +28,9 @@ from modules import i18n, log_kit, tray_kit   # noqa: E402
 from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
                                ICON_DRAW, VERSION)
 from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
-from modules.paths import LOG_DIR, RUN_DIR, USER_DATA_DIR, process_pending_update
-from updater import check_update, download_update, prepare_update_cmd
+from modules.paths import LOG_DIR, RUN_DIR, USER_DATA_DIR
+from updater import (check_update, download_update, prepare_update_cmd,
+                     process_pending_update, pop_failed_update_note)
 from keyboard_hook import KeyboardHook
 from pipeline import (
     AsrEngine,
@@ -997,7 +998,7 @@ def main():
                                  i18n.t("dup_cancelled")]),
             title=APP_NAME)
         return 0
-    process_pending_update()
+    process_pending_update(log=log)
     migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
     overlay = Overlay()
@@ -1010,6 +1011,11 @@ def main():
     tray.start()
     tray.set_title(i18n.t("tray_loading") % APP_NAME)
     tray.notify(i18n.t("notify_loading"))
+
+    # 上次自动更新失败？托盘已退出、失败只能下次启动说（读一次即删）。
+    failed_note = pop_failed_update_note(log=log)
+    if failed_note:
+        tray.notify(failed_note, APP_NAME)
 
     # --quit 请求文件监视（tray_kit 三循环之③）：走与托盘退出同一条清理路径。
     # 纪律（F11）：请求文件落在数据区，必须随 <APP>_DATA_DIR 重定向。

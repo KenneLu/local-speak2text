@@ -145,6 +145,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem GATE 2d: update-chain safety, with REAL execution of the rendered apply.bat
+rem (success + failure injection) plus sha256 fail-closed and pending-evidence
+rem retention. The bat is run with CREATE_NO_WINDOW and a .vbs fake exe so it
+rem cannot pop a console window onto the user's desktop.
+echo [TEST] update chain safety ...
+"%PY%" tests\test_update_safety.py
+if errorlevel 1 (
+  echo [ERROR] update chain safety test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
 rem ---------------------------------------------------------------------------
 rem GATE 3: pipeline selftest with the default model (real ASR roundtrip)
 rem ---------------------------------------------------------------------------

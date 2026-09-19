@@ -30,6 +30,35 @@ The tagging convention matches the versions in this file.
   switched to English. Now reads `i18n.current_lang()` (template i18n 2.1.1,
   which no longer copies mutable state); pinned by `tests/test_i18n_menu.py`
   and `build.bat` GATE 2c.
+- **Update chain hardened to reme-verified semantics** (three same-family defects):
+  * **sha256 is now fail-closed** — `download_update` aborts when the `.sha256`
+    asset is missing or does not match; the old `except FileNotFoundError: skip
+    verify` silently downgraded the only integrity check.
+  * **The apply script no longer guesses.** It waits for the old process to
+    actually exit (`tasklist` to a file + `find`, never a pipe — the script runs
+    detached with no console, where `tasklist | find` blocks forever) with a wait
+    limit; it snapshots the current install **before** copying and only rotates
+    that snapshot to `_backup` after a copy that succeeded; it checks the
+    `robocopy` exit code (>=8 = failure) and then **never starts the new exe** —
+    it restores from the snapshot and starts the previous version, or starts
+    nothing and keeps the snapshot if the restore also fails; failures write an
+    `update.failed` marker that the next launch reads once and surfaces to the
+    user (`pop_failed_update_note`).
+  * **`process_pending_update` no longer destroys evidence** — it parses the
+    `robocopy` return code and, on failure, keeps `update.pending.json`, the
+    staged files and writes the marker; the `os.system` string interpolation is
+    replaced by `subprocess.run([...])`. It now lives in `updater.py` (the
+    template's copy in `modules/paths` is left byte-identical and unused, pending
+    the template fix).
+  * Fixed the staged-dir detection: our `release.yml` zips the package **flat**,
+    so `UPDATE_DIR/<APP_ID>` never existed and `prepare_update_cmd` would have
+    raised "staged exe missing" — the auto-update had never been run end to end.
+  * New `tests/test_update_safety.py` (build.bat **GATE 2d**): the rendered
+    `.bat` is really executed for both success and a failure injection
+    (`robocopy` rc=16), asserting "failure starts the old version, never the new
+    one, writes the marker and keeps the snapshot"; plus sha256 fail-closed and
+    pending-evidence retention. The bat runs with `CREATE_NO_WINDOW` and a `.vbs`
+    fake exe so it cannot pop a console window on the user's desktop.
 - **New `--quit`**: asks a running instance to exit without the confirm
   dialog (request file lives under the redirectable data dir).
 - Icon graphics are single-sourced from `appconfig.ICON_DRAW` (runtime tray

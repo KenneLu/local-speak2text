@@ -103,7 +103,7 @@ M.Overlay = _FakeOverlay
 M.Tray = _FakeTray
 M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
-M.process_pending_update = lambda: CALLS.__setitem__("pending", CALLS["pending"] + 1)
+M.process_pending_update = lambda **_kw: CALLS.__setitem__("pending", CALLS["pending"] + 1)
 M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
 
 # 本测试只验证"守卫放行后启动序列完整走通"，不验证守卫本身（那是
