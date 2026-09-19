@@ -16,7 +16,7 @@ from pathlib import Path
 
 APP_ID = "local-speak2text"
 APP_NAME = "LocalSpeak2Text"
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
@@ -25,9 +25,13 @@ else:
     APP_DIR = Path(__file__).resolve().parents[1]
 RUN_DIR = APP_DIR
 
-USER_DATA_DIR = Path(
+_DATA_ROOT = Path(
     os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
-) / APP_ID
+)
+# 实例隔离（F11/D12，模板 paths 1.1.2 同款）：整个数据根可被
+# LOCALSPEAK2TEXT_DATA_DIR 重定向。测试 / 构建脚本 / CI 跑的实例**必须**用它，
+# 严禁与用户常驻实例共享 config、log、更新暂存等任何落盘文件。
+USER_DATA_DIR = Path(os.environ.get("LOCALSPEAK2TEXT_DATA_DIR") or _DATA_ROOT) / APP_ID
 
 # 测试/便携覆盖：环境变量显式指定配置文件位置
 CONFIG_PATH = (

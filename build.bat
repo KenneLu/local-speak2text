@@ -87,6 +87,30 @@ if errorlevel 1 (
 )
 
 rem ---------------------------------------------------------------------------
+rem GATE 2b: single-instance guard + normal startup path (headless, no GUI)
+rem   Regression for the 1.2.0-1.4.0 defect: an illegal mutex name made
+rem   CreateMutexW fail (err=3) and the guard treated that failure as
+rem   "already running", so the exe could never start. --smoke bypasses the
+rem   guard, so these two suites are the only gates that exercise the real
+rem   startup path.
+rem ---------------------------------------------------------------------------
+echo [TEST] single instance guard ...
+"%PY%" tests\test_single_instance.py
+if errorlevel 1 (
+  echo [ERROR] single instance guard test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+echo [TEST] startup path ...
+"%PY%" tests\test_startup_path.py
+if errorlevel 1 (
+  echo [ERROR] startup path test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+rem ---------------------------------------------------------------------------
 rem GATE 3: pipeline selftest with the default model (real ASR roundtrip)
 rem ---------------------------------------------------------------------------
 echo [TEST] pipeline selftest ...
@@ -175,15 +199,22 @@ rem ---------------------------------------------------------------------------
 rem Frozen check: the packaged exe must prove itself before shipping.
 rem LOCALSPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
 rem (model_dir resolves via the upward fallback to the repo's asr-modules/).
+rem LOCALSPEAK2TEXT_DATA_DIR redirects the WHOLE data root into the release
+rem dir (F11/D12 instance isolation): without it the smoke writes its log into
+rem the user's live %LOCALAPPDATA%\local-speak2text\log, i.e. build tooling
+rem touches the running instance's files. Same as dsh/opencodex-helper.
 rem ---------------------------------------------------------------------------
 set "PYTHONUTF8=1"
 set "LOCALSPEAK2TEXT_CONFIG=%CD%\%RELEASE_DIR%\config.json"
+set "LOCALSPEAK2TEXT_DATA_DIR=%CD%\%RELEASE_DIR%\smoke-data"
 echo [TEST] smoke test ...
 "%FROZEN_EXE%" --smoke
 set SMOKE_RC=%errorlevel%
 set "LOCALSPEAK2TEXT_CONFIG="
+set "LOCALSPEAK2TEXT_DATA_DIR="
 if exist "%RELEASE_DIR%\smoke.log" del /q "%RELEASE_DIR%\smoke.log"
 if exist "%RELEASE_DIR%\log" rmdir /s /q "%RELEASE_DIR%\log"
+if exist "%RELEASE_DIR%\smoke-data" rmdir /s /q "%RELEASE_DIR%\smoke-data"
 if not "%SMOKE_RC%"=="0" (
   echo [ERROR] smoke test failed.
   if not defined NOPAUSE pause

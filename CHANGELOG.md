@@ -3,6 +3,30 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.1
+
+- **Fixed: the exe could not start at all since 1.2.0.** The single-instance
+  mutex was named `Local\<app>\SingleInstance`; a named kernel object may not
+  contain a second backslash after the `Local\` namespace prefix, so
+  `CreateMutexW` always failed with err=3 (`ERROR_PATH_NOT_FOUND`). The guard
+  treated a null handle as "another instance is running", so every launch
+  showed the "already running" box and exited. Renamed to the family-standard
+  `Local\<app>-single-instance`.
+- **Guard now fails open.** When the guard itself cannot run, the app continues
+  instead of refusing to start (STANDARDS D3.2). Only a confirmed
+  `ERROR_ALREADY_EXISTS` cancels the launch. Both directions are now asserted
+  by `tests/test_single_instance.py`.
+- Last-error is cleared before `CreateMutexW` so a stale 183 cannot be
+  misread as "already exists"; the duplicate path is logged instead of being
+  silent.
+- **New `tests/test_startup_path.py`**: runs the real `main()` with UI/model
+  stubs, asserting the startup sequence is actually reached — `--smoke`
+  bypasses the guard, which is why this defect survived three months of green
+  builds. Both suites are now gates in `build.bat` (GATE 2b).
+- **Instance isolation**: `LOCALSPEAK2TEXT_DATA_DIR` now redirects the whole
+  data root (F11/D12, matches template `modules/paths` 1.1.2), so tests and
+  build scripts no longer share config/log with a running tray instance.
+
 ## 1.4.0
 
 - Model resources renamed: `models/` -> `asr-modules/` (auto-migrated once on

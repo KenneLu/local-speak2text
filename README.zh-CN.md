@@ -1,6 +1,6 @@
 # local-speak2text
 
-[English](README.md) | 简体中文
+[English](README.md) | **简体中文**
 
 Windows 上的本地离线语音转文字听写工具：按住热键说话，松手文字就落在光标处。多引擎 ASR（Qwen3 / SenseVoice / FireRedASR / Paraformer）自动识别，全程本机运行。
 

@@ -110,16 +110,23 @@ def _install_excepthooks():
 
 # ---------- 单实例 ----------
 
-MUTEX_NAME = r"Local\%s\SingleInstance" % APP_ID
+# 命名内核对象：命名空间前缀 `Local\` 之后**不允许再出现反斜杠**。
+# 1.2.0~1.4.0 写成 r"Local\%s\SingleInstance"（多一个反斜杠）→ CreateMutexW 返回
+# NULL + err=3(ERROR_PATH_NOT_FOUND)，而旧代码把 NULL 当"已有实例"→ 每次启动都误报
+# "已在运行"，工具完全打不开。命名口径与模板 modules/tray_kit 保持一致。
+MUTEX_NAME = r"Local\%s-single-instance" % APP_ID
 ERROR_ALREADY_EXISTS = 183
 _MUTEX_HANDLE = None
 
 
 def acquire_single_instance():
-    """命名互斥体保证只有一个托盘实例（house 标准，同 reme-helper）。
+    """命名互斥体保证只有一个托盘实例（house 标准，同 reme-helper / 模板 tray_kit）。
 
     双开会抢键盘钩子和音频设备，还会各写一份配置。测试/特殊场景设
-    LST_ALLOW_MULTI=1 可跳过。返回 False 表示已有实例在跑。
+    LST_ALLOW_MULTI=1 可跳过。
+
+    **失败方向（D3.2）：守卫自身出错一律放行**——宁可多开一个，也不能打不开。
+    只有"确认另一个实例正持有同名互斥体"（ERROR_ALREADY_EXISTS）才返回 False。
     """
     global _MUTEX_HANDLE
     if os.environ.get("LST_ALLOW_MULTI") == "1":
@@ -128,14 +135,23 @@ def acquire_single_instance():
         return True
     import ctypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateMutexW.restype = ctypes.c_void_p
-    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    if not handle or ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
-        if handle:
-            kernel32.CloseHandle(handle)
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        ctypes.set_last_error(0)   # 清掉陈旧 last-error，否则可能把上一次的 183 读成"已存在"
+        handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    except Exception as exc:       # 守卫不可用：放行
+        log_kit.log("single-instance guard unavailable (%s); continuing" % exc)
+        return True
+    if not handle:                 # 创建失败 ≠ 已有实例
+        log_kit.log("single-instance guard failed (err=%s); continuing"
+                    % ctypes.get_last_error())
+        return True
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        log_kit.log("another instance holds %s; this launch cancels" % MUTEX_NAME)
         return False
-    _MUTEX_HANDLE = handle
+    _MUTEX_HANDLE = handle         # 故意持有到进程结束，不能提前关闭
     return True
 
 
@@ -144,7 +160,31 @@ def warn_duplicate_instance():
     import ctypes
 
     ctypes.windll.user32.MessageBoxW(
-        0, "%s 已在运行：请使用托盘里的那个实例。" % APP_NAME, APP_NAME, 0x40)
+        0, i18n.t("dup_running") % APP_NAME, APP_NAME, 0x40)
+
+
+def mutex_name_is_valid():
+    """D3.1：诊断参数必须覆盖单实例守卫——只验"内核是否接受这个名字"，不占锁。
+
+    历史：`--smoke` 曾完全绕过守卫，于是「互斥体名含第二个反斜杠 → CreateMutexW
+    恒失败 → 被当成已有实例」这个故障在构建全绿的情况下活了 3 个月（1.2.0~1.4.0）。
+    这个函数就是让冒烟能在构建时把同类问题打红。失败方向同守卫：不确定就放行。
+    """
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        ctypes.set_last_error(0)
+        handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+        err = ctypes.get_last_error()
+    except Exception:
+        return True
+    if handle:
+        kernel32.CloseHandle(handle)   # 只探测，不持有
+    return bool(handle) and err in (0, ERROR_ALREADY_EXISTS)
 
 
 # ---------- 配置 ----------
@@ -349,7 +389,7 @@ class Tray:
         new_lang = "en" if i18n.LANG == "zh" else "zh"
         i18n.init(new_lang)
         i18n.save_language_to_config(CONFIG_PATH, new_lang)
-        self.notify("Language: English" if new_lang == "en" else "语言：中文")
+        self.notify(i18n.t("notify_lang_switched"))
         self.rebuild()
 
     def _check_update(self, icon, item):
@@ -948,10 +988,11 @@ def type_text(text):
 
 def main():
     _install_excepthooks()
+    # i18n 先于单实例守卫初始化：重复实例的提示框也要出正确的语言
+    i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     if not acquire_single_instance():
         warn_duplicate_instance()
         return 0
-    i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     process_pending_update()
     migrate_autostart()
     log_kit.log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
@@ -1007,6 +1048,9 @@ def smoke():
         base = os.path.dirname(os.path.abspath(__file__))
     log = os.path.join(base, "smoke.log")
     try:
+        # D3.1：冒烟必须覆盖单实例守卫（只验名字合法，不占锁）
+        if not mutex_name_is_valid():
+            raise RuntimeError("单实例互斥体名非法: " + MUTEX_NAME)
         load_config()
         if not os.path.isdir(MODEL_DIR):
             raise RuntimeError("模型目录不存在: " + MODEL_DIR)

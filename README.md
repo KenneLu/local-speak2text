@@ -1,6 +1,6 @@
 # local-speak2text
 
-English | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md)
 
 Local, offline speech-to-text dictation for Windows. Hold a hotkey, speak, text lands at your cursor. Multi-engine ASR (Qwen3 / SenseVoice / FireRedASR / Paraformer) with auto-detection, 100% on-device.
 
