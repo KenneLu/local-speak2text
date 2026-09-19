@@ -49,7 +49,10 @@ def check(name, ok, detail=""):
         FAILS.append(name)
 
 
-def _wait_for(path, seconds=10.0):
+def _wait_for(path, seconds=30.0):
+    # 30s: `start "" file.vbs` goes through the shell association to wscript.exe;
+    # that first launch can take seconds under load (e.g. during a build). The
+    # negative assertions pass a short timeout explicitly.
     deadline = time.time() + seconds
     while time.time() < deadline:
         if path.exists():
@@ -81,7 +84,7 @@ check("sha256: real '<hash>  <name>' line passes",
 
 
 # ==================== B. 替换脚本真跑 ====================
-def _stage(root, stage_missing=False):
+def _stage(root, stage_missing=False, install_empty=False):
     install = root / "install"
     stage = root / "stage"
     work = root / "work"
@@ -89,8 +92,9 @@ def _stage(root, stage_missing=False):
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
-    (install / "probe.vbs").write_text(_probe_vbs("started-old.txt"), encoding="ascii")
-    (install / "data-old.txt").write_text("old", encoding="utf-8")
+    if not install_empty:
+        (install / "probe.vbs").write_text(_probe_vbs("started-old.txt"), encoding="ascii")
+        (install / "data-old.txt").write_text("old", encoding="utf-8")
     if not stage_missing:
         (stage / "probe.vbs").write_text(_probe_vbs("started-new.txt"), encoding="ascii")
         (stage / "data-new.txt").write_text("new", encoding="utf-8")
@@ -122,10 +126,18 @@ def _run_bat(root, p):
 
 
 def _bat_success(root):
-    p = _stage(root)
-    _run_bat(root, p)
+    # `start "" probe.vbs` goes through the shell association to wscript.exe. Under
+    # heavy load (first run inside a build) that launch occasionally does not
+    # materialize within the timeout while everything else succeeded, so allow one
+    # retry - the semantics under test (what the script does) are unchanged.
+    for attempt in (1, 2):
+        p = _stage(root)
+        _run_bat(root, p)
+        if _wait_for(p["install"] / "started-new.txt"):
+            break
+        print("  .. success scenario retry %d (fake exe did not start)" % attempt, flush=True)
     check("bat success: new version started",
-          _wait_for(p["install"] / "started-new.txt"))
+          (p["install"] / "started-new.txt").exists())
     check("bat success: install payload updated", (p["install"] / "data-new.txt").exists())
     check("bat success: old snapshot rotated into BACKUP",
           (p["backup"] / "data-old.txt").exists() and not p["snapshot"].exists())
@@ -152,10 +164,27 @@ def _bat_failure(root):
           log_text[-100:].replace("\n", " | "))
 
 
+def _bat_failure_no_old(root):
+    """失败注入 + 目标目录里连旧 exe 都没有：回退后**不得**尝试启动任何 exe。
+
+    否则 `start` 一个不存在的文件会弹出**模态错误框**，而脚本是无 console 的
+    detached 进程，没人能点掉它——会永久卡住（模板同批也在修这一点）。
+    """
+    p = _stage(root, stage_missing=True, install_empty=True)
+    _run_bat(root, p)
+    check("bat no-old-exe: nothing started",
+          not _wait_for(p["install"] / "started-old.txt", 3.0)
+          and not (p["install"] / "started-new.txt").exists())
+    log_text = p["log"].read_text(encoding="utf-8", errors="replace")
+    check("bat no-old-exe: log says it refused to start", "not starting" in log_text,
+          log_text[-100:].replace("\n", " | "))
+
+
 _root_b = Path(tempfile.mkdtemp(prefix="l-s2t-bat-"))
 try:
     _bat_success(_root_b)
     _bat_failure(_root_b)
+    _bat_failure_no_old(_root_b)
 finally:
     shutil.rmtree(_root_b, ignore_errors=True)
 

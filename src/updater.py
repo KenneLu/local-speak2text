@@ -211,7 +211,10 @@ if %RC% geq 8 goto install_failed
 if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
 move /y "%SNAPSHOT%" "%BACKUP%" >nul 2>nul
 del "{pending}" >nul 2>nul
-start "" "{newexe}"
+rem Guard the start: starting a missing exe pops a MODAL error box, and this script
+rem runs detached with no one to dismiss it - it would wedge forever.
+if not exist "{newexe}" echo [{stamp}] new exe missing - not starting >> "%LOG%"
+if exist "{newexe}" start "" "{newexe}"
 echo [{stamp}] done >> "%LOG%"
 goto cleanup
 :install_failed
@@ -222,7 +225,9 @@ echo [{stamp}] INSTALL FAILED rc=%RC% - restoring from snapshot >> "%LOG%"
 robocopy "%SNAPSHOT%" "%TARGET%" /e /purge /njh /njs /nfl /ndl >> "%LOG%" 2>&1
 if errorlevel 8 goto install_dead
 echo [{stamp}] restored - starting previous version >> "%LOG%"
-start "" "{newexe}"
+rem Same guard as the success path: never start a missing exe (modal box, no console).
+if not exist "{newexe}" echo [{stamp}] previous exe missing - not starting >> "%LOG%"
+if exist "{newexe}" start "" "{newexe}"
 goto cleanup_keep
 :install_dead
 echo [{stamp}] RESTORE FAILED - not starting; snapshot kept at %SNAPSHOT% >> "%LOG%"
