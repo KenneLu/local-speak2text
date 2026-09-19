@@ -1028,6 +1028,9 @@ def main():
     process_pending_update(log=log)
     migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
+    # C-38 启动自证：把**解析后**的数据根 / 配置路径写进产物自带的日志（不是常量、不是假设值）。
+    # 下一次 %TEMP% 残留归属不明时，只有这一行能把实例钉到具体的数据根与配置文件。
+    log("data dir %s config %s" % (USER_DATA_DIR, CONFIG_PATH))
     overlay = Overlay()
     ctrl = Controller(overlay, None)
     tray = Tray(ctrl)
