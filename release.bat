@@ -19,11 +19,11 @@ set "RELEASE_BRANCH=main"
 set DRY_RUN=
 if /i "%~1"=="--dry-run" set DRY_RUN=1
 
-rem Version from paths.py - the app and the tag can never disagree
+rem Version from appconfig.py - the app and the tag can never disagree
 set VERSION=
-for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " paths.py') do set VERSION=%%~b
+for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%~b
 if not defined VERSION (
-  echo [ERROR] Cannot read VERSION from paths.py.
+  echo [ERROR] Cannot read VERSION from src\modules\appconfig\appconfig.py.
   exit /b 1
 )
 set VERSION=%VERSION:"=%

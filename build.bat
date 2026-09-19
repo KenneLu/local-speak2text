@@ -8,7 +8,7 @@ rem Usage: build.bat [norun] [nopause]
 rem   norun    do not start the built exe (starting it is the default)
 rem   nopause  unattended (no "press any key") - used by CI
 rem
-rem Version comes from paths.py VERSION (single source of truth).
+rem Version comes from appconfig.VERSION (single source of truth).
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions
 cd /d "%~dp0"
@@ -32,11 +32,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Version: read from paths.py so the script and the app cannot drift apart
+rem Version: read from appconfig.py so the script and the app cannot drift apart
 set VERSION=
-for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\paths.py') do set VERSION=%%~b
+for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%~b
 if not defined VERSION (
-  echo [ERROR] Cannot read VERSION from paths.py.
+  echo [ERROR] Cannot read VERSION from src\modules\appconfig\appconfig.py.
   if not defined NOPAUSE pause
   exit /b 1
 )
@@ -51,7 +51,7 @@ set FROZEN_EXE=%RELEASE_DIR%\%APPNAME%.exe
 echo [VERSION] %VERSION%  release: %RELEASE_DIR%
 
 if exist "%RELEASE_DIR%" (
-  echo [ERROR] %RELEASE_DIR% already exists. Delete it or bump VERSION in paths.py.
+  echo [ERROR] %RELEASE_DIR% already exists. Delete it or bump VERSION in appconfig.py.
   if not defined NOPAUSE pause
   exit /b 1
 )
@@ -68,7 +68,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile src/main.py src/pipeline.py src/paths.py src/icons.py src/updater.py src/keyboard_hook.py src/wasapi_probe.py src/modules/i18n/i18n.py src/modules/appconfig/appconfig.py src/modules/log_kit/log_kit.py
+"%PY%" -m py_compile src/main.py src/pipeline.py src/icons.py src/updater.py src/keyboard_hook.py src/wasapi_probe.py src/modules/i18n/i18n.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause

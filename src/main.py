@@ -27,7 +27,8 @@ import pystray
 from PIL import Image, ImageDraw
 
 from modules import i18n, log_kit   # noqa: E402
-from paths import APP_ID, APP_NAME, LOG_DIR, RUN_DIR, VERSION, process_pending_update
+from modules.appconfig import APP_ID, APP_NAME, VERSION
+from modules.paths import LOG_DIR, RUN_DIR, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
 from pipeline import (
@@ -101,7 +102,7 @@ def crash_log(text):
     --noconsole 打包后 stderr 不存在，没有这个文件闪退就无迹可寻。
     """
     try:
-        from paths import USER_DATA_DIR
+        from modules.paths import USER_DATA_DIR
 
         USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(USER_DATA_DIR / "crash.log", "a", encoding="utf-8") as f:
@@ -237,7 +238,7 @@ def get_autostart_cmd():
         # 打包实例：自启指向稳定安装位（若本 exe 就是从那里启动的，两者相同）。
         # 开发态 exe（比如用户直接在 release 目录试用）启动时，仍注册稳定位——
         # 那里将来由更新器安装正式版；稳定位还没有 exe 时退回注册当前路径。
-        from paths import INSTALL_EXE, is_stable_install
+        from modules.paths import INSTALL_EXE, is_stable_install
 
         if is_stable_install() or INSTALL_EXE.exists():
             return '"%s"' % str(INSTALL_EXE)

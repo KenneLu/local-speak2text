@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import sherpa_onnx
 
-from paths import APP_DIR, CONFIG_PATH as _USER_CONFIG_PATH, seed_config
+from modules.paths import APP_DIR, CONFIG_PATH as _USER_CONFIG_PATH, seed_config
 
 SAMPLE_RATE = 16000
 NUM_THREADS = 8                # ONNX 解码线程数（config.json 可覆盖；实测本机 8 最优）
@@ -245,7 +245,7 @@ def run_benchmark(models_dir, progress=lambda kind, name: None):
 def perf_log(msg):
     """轻量性能日志：追加到用户数据目录 local-speak2text.log，失败静默。"""
     try:
-        from paths import LOG_DIR
+        from modules.paths import LOG_DIR
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         with open(LOG_DIR / "local-speak2text.log", "a", encoding="utf-8") as f:

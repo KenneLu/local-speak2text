@@ -7,7 +7,9 @@
 VERSION 暂仍住在 paths.py；paths 模板件落位后随之搬到这里（全仓唯一事实源）。
 """
 APP_ID = "local-speak2text"
-APP_NAME = "local-speak2text"
+APP_NAME = "LocalSpeak2Text"   # 历史注册表自启键名，改名 = 断链（NAME-05），不得擅动
+VERSION = "1.4.1"
+
 REPO_OWNER = "KenneLu"
 REPO_NAME = "local-speak2text"
 EXE_NAME = "local-speak2text.exe"

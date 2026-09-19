@@ -1,0 +1,99 @@
+# -*- coding: utf-8 -*-
+# TEMPLATE-FROM: my-diy-tool-template/modules/paths/paths.py | TEMPLATE-VER: 1.1.2
+"""T2｜路径与数据区（蓝本 local-speak2text/paths.py）。
+
+四个位置，职责分明：APP_DIR 程序本体；RUN_DIR 本次运行的包；USER_DATA_DIR 用户
+数据（config + log + update）；INSTALL_DIR 稳定安装位（自启指向，更新不变）。
+**数据根整体可被环境变量重定向**（F11 教训）：测试/工具链必须用独立数据区，
+严禁与用户常驻实例共享 config/log/退出请求等任何落盘文件。
+
+1.1.2：dev 态锚定改为「向上查找 main.py 所在目录的上一级（仓库根）」——家族统一
+src/main.py + src/modules/ 布局后，本文件不再依赖自身所在深度。
+"""
+import os
+import shutil
+import sys
+from pathlib import Path
+
+from modules.appconfig import APP_ID
+
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    # dev 态：exe 旁语义 = 仓库根（出厂 config/模型/构建产物住根）；src/ 只放代码。
+    # 向上找 main.py 所在的 src/，再上一级 = 仓库根——与本模块所在深度无关。
+    _here = Path(__file__).resolve()
+    _src_dir = next((p for p in _here.parents if (p / "main.py").exists()), _here.parents[1])
+    APP_DIR = _src_dir.parent
+RUN_DIR = APP_DIR
+
+_DATA_ROOT = Path(
+    os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share"
+)
+# TEMPLATE-LOCAL-OVERRIDE: 环境变量前缀固定为 LOCALSPEAK2TEXT（CONFORMANCE §3.4
+# NAME-10 登记的 l-s2t 形态，无下划线）。模板 1.1.2 按 APP_ID.upper().replace('-','_')
+# 推导得 LOCAL_SPEAK2TEXT_*，与既有 build.bat / CI / tests / 用户脚本的契约不符，
+# 且会静默破坏 F11 实例隔离。待 T2 正本支持显式前缀后删本块。
+_ENV_PREFIX = "LOCALSPEAK2TEXT"
+USER_DATA_DIR = Path(os.environ.get(_ENV_PREFIX + "_DATA_DIR") or _DATA_ROOT) / APP_ID
+
+# TEMPLATE-LOCAL-OVERRIDE: 显式钉配置文件位置（LOCALSPEAK2TEXT_CONFIG）——冻结冒烟/
+# 测试实例隔离依赖；模板 1.1.2 只实现 _DATA_DIR，_CONFIG 属模板缺件，待 T2 补齐后删。
+CONFIG_PATH = (
+    Path(os.environ[_ENV_PREFIX + "_CONFIG"]).expanduser()
+    if os.environ.get(_ENV_PREFIX + "_CONFIG")
+    else USER_DATA_DIR / "config.json"
+)
+LEGACY_CONFIG_PATH = APP_DIR / "config.json"   # 旧位置（exe 旁），仅播种时读一次
+
+LOG_DIR = USER_DATA_DIR / "log"
+UPDATE_DIR = USER_DATA_DIR / "update"
+UPDATE_PENDING = RUN_DIR / "update.pending.json"
+LOG_PATH = LOG_DIR / (APP_ID + ".log")
+UPDATE_DIR = USER_DATA_DIR / "update"
+
+INSTALL_DIR = USER_DATA_DIR / "app"
+INSTALL_EXE = INSTALL_DIR / f"{APP_ID}.exe"
+
+
+def is_stable_install():
+    """当前 exe 是否就是稳定安装位里的那个（更新器安装的正式实例）。"""
+    try:
+        return Path(sys.executable).resolve() == INSTALL_EXE.resolve()
+    except OSError:
+        return False
+
+
+def ensure_user_dirs():
+    USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def seed_config():
+    """首次运行（数据区还没有 config.json）时，从旧位置迁移一份作初始配置。"""
+    ensure_user_dirs()
+    if CONFIG_PATH.exists():
+        return CONFIG_PATH
+    try:
+        if LEGACY_CONFIG_PATH.exists():
+            shutil.copyfile(LEGACY_CONFIG_PATH, CONFIG_PATH)
+    except OSError:
+        pass
+    return CONFIG_PATH
+
+
+def process_pending_update():
+    """（可选，T4 配套）启动兜底：处理上次会话退出时未完成的更新镜像任务。"""
+    if not UPDATE_PENDING.exists():
+        return False
+    try:
+        import json
+        info = json.loads(UPDATE_PENDING.read_text(encoding="utf-8"))
+        staged, target = Path(info["staged"]), Path(info["target"])
+        if staged.is_dir() and target.is_dir():
+            os.system(f'robocopy "{staged}" "{target}" /MIR /R:1 /W:1 /NFL /NDL /NP >nul')
+        UPDATE_PENDING.unlink(missing_ok=True)
+        shutil.rmtree(UPDATE_DIR, ignore_errors=True)
+        return True
+    except Exception:
+        return False

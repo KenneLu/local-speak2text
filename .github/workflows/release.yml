@@ -51,12 +51,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy sherpa-onnx sounddevice pystray pillow pyperclip pyinstaller
 
-      - name: Read version from paths.py
+      - name: Read version from appconfig.py
         id: version
         shell: pwsh
         run: |
-          $line = Select-String -Path src/paths.py -Pattern '^VERSION = ' | Select-Object -First 1
-          if (-not $line) { throw "VERSION not found in paths.py" }
+          $line = Select-String -Path src/modules/appconfig/appconfig.py -Pattern '^VERSION = ' | Select-Object -First 1
+          if (-not $line) { throw "VERSION not found in src/modules/appconfig/appconfig.py" }
           $version = ($line.Line -split '"')[1]
           "version=$version" >> $env:GITHUB_OUTPUT
           "package=local-speak2text-$version" >> $env:GITHUB_OUTPUT

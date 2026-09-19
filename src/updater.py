@@ -14,7 +14,8 @@ import time
 import urllib.request
 import zipfile
 
-from paths import APP_DIR, APP_ID, UPDATE_DIR, UPDATE_PENDING, VERSION
+from modules.appconfig import APP_ID, VERSION
+from modules.paths import APP_DIR, UPDATE_DIR, UPDATE_PENDING
 
 CHECK_INTERVAL = 24 * 3600
 STATE = {"checked_for": "", "latest": "", "at": 0.0, "asset_url": "", "asset_size": 0}
@@ -132,7 +133,7 @@ def prepare_update_cmd(staged_dir):
     exe = os.path.join(staged_dir, APP_ID + ".exe")
     if not os.path.exists(exe):
         raise RuntimeError("staged exe missing: " + exe)
-    from paths import INSTALL_DIR, INSTALL_EXE
+    from modules.paths import INSTALL_DIR, INSTALL_EXE
 
     UPDATE_PENDING.write_text(
         json.dumps({"staged": staged_dir, "target": str(INSTALL_DIR)}, ensure_ascii=False),

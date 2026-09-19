@@ -25,7 +25,7 @@ os.environ.pop("LST_ALLOW_MULTI", None)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from paths import LOG_PATH  # noqa: E402
+from modules.paths import LOG_PATH  # noqa: E402
 
 FAILS = []
 
