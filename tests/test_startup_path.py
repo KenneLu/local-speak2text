@@ -21,7 +21,9 @@ from pathlib import Path
 _TMP = tempfile.mkdtemp(prefix="l-s2t-startup-")
 os.environ["LOCALSPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCALSPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
-os.environ.pop("LST_ALLOW_MULTI", None)
+# 注：模板 tray_kit 的单实例守卫没有"多开豁免"开关（旧内联版那个开关已随守卫
+# 一起淘汰，历史记录见 CHANGELOG 1.2.0），这里不再 pop 任何开关——
+# 守卫在测试进程里按正常语义放行/拦下。
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
