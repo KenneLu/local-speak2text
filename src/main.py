@@ -26,9 +26,8 @@ import winreg
 import pystray
 from PIL import Image, ImageDraw
 
-from modules import i18n   # noqa: E402
-import log_kit
-from paths import APP_ID, APP_NAME, RUN_DIR, VERSION, process_pending_update
+from modules import i18n, log_kit   # noqa: E402
+from paths import APP_ID, APP_NAME, LOG_DIR, RUN_DIR, VERSION, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
 from pipeline import (
@@ -67,6 +66,35 @@ def dprint(*args):
         print(*args, flush=True)
 
 
+# ---------- 运行日志（T12 log_kit） ----------
+
+_LOG_HANDLE = None
+
+
+def _log_handle():
+    """惰性初始化：守卫/异常钩子在 main() 之前也可能要记日志。"""
+    global _LOG_HANDLE
+    if _LOG_HANDLE is None:
+        _LOG_HANDLE = log_kit.make_logger(LOG_DIR)
+    return _LOG_HANDLE
+
+
+def log(message):
+    """写一行 INFO。日志失败静默——日志永远不能把主流程弄死。"""
+    try:
+        _log_handle()[0](message)
+    except Exception:
+        pass
+
+
+def open_log_dir():
+    """托盘「打开日志目录」的落地动作。"""
+    try:
+        _log_handle()[1]()
+    except Exception:
+        pass
+
+
 def crash_log(text):
     """崩溃兜底：任何线程的未捕获异常都落到用户数据区 crash.log。
 
@@ -90,7 +118,7 @@ def _install_excepthooks():
 
         text = "%s: %s\n%s" % (kind, exc, "".join(traceback.format_exception(exc)))
         crash_log(text)
-        log_kit.log("CRASH " + text.splitlines()[0])
+        log("CRASH " + text.splitlines()[0])
 
     old_sys = sys.excepthook
 
@@ -141,15 +169,15 @@ def acquire_single_instance():
         ctypes.set_last_error(0)   # 清掉陈旧 last-error，否则可能把上一次的 183 读成"已存在"
         handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     except Exception as exc:       # 守卫不可用：放行
-        log_kit.log("single-instance guard unavailable (%s); continuing" % exc)
+        log("single-instance guard unavailable (%s); continuing" % exc)
         return True
     if not handle:                 # 创建失败 ≠ 已有实例
-        log_kit.log("single-instance guard failed (err=%s); continuing"
+        log("single-instance guard failed (err=%s); continuing"
                     % ctypes.get_last_error())
         return True
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
         kernel32.CloseHandle(handle)
-        log_kit.log("another instance holds %s; this launch cancels" % MUTEX_NAME)
+        log("another instance holds %s; this launch cancels" % MUTEX_NAME)
         return False
     _MUTEX_HANDLE = handle         # 故意持有到进程结束，不能提前关闭
     return True
@@ -431,7 +459,7 @@ class Tray:
         self.controller.ui_q.put(("benchmark_start",))
 
     def _open_logs(self, icon, item):
-        log_kit.open_log_dir()
+        open_log_dir()
 
     def _quit(self, icon, item):
         # 托盘点「退出」不直接退：走 UI 线程的二次确认（队列封送）
@@ -995,7 +1023,7 @@ def main():
         return 0
     process_pending_update()
     migrate_autostart()
-    log_kit.log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
+    log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
     overlay = Overlay()
     ctrl = Controller(overlay, None)
     tray = Tray(ctrl)
@@ -1011,7 +1039,7 @@ def main():
         engine = AsrEngine()
     except Exception as e:
         dprint("model load failed:", e)
-        log_kit.log("model load failed: %s" % e)
+        log("model load failed: %s" % e)
         tray.set_title(i18n.t("tray_load_failed") % APP_NAME)
         tray.notify(i18n.t("notify_load_failed"))
     else:
@@ -1019,7 +1047,7 @@ def main():
         ctrl.hook_started = ctrl.hook.start()
         tray.set_title(i18n.t("tray_ready") % (APP_NAME, engine.model_type))
         tray.notify(i18n.t("notify_ready") % engine.model_type)
-        log_kit.log("model ready: %s" % engine.model_type)
+        log("model ready: %s" % engine.model_type)
 
     # 启动后后台节流检查更新（有配置 update_repo 才生效），有新版弹通知并点亮菜单
     def _startup_update_check():
@@ -1033,7 +1061,7 @@ def main():
     try:
         overlay.root.mainloop()
     finally:
-        log_kit.log("exit")
+        log("exit")
         if ctrl.update_cmd_path:
             os.system('start "" /min "%s"' % ctrl.update_cmd_path)
         ctrl.hook.stop()

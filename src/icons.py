@@ -1,56 +1,63 @@
 # -*- coding: utf-8 -*-
-"""图标生成：麦克风造型，代码绘制，零美术素材。
+# TEMPLATE-FROM: my-diy-tool-template/modules/icons/icons.py | TEMPLATE-VER: 2.0.0
+"""T6｜代码生成双 ico（G5）：构建期生成，仓库里不进二进制图标资源。
+
+2.0.0：生成**流程**全部在本模板（帧表/写入/__main__ 锚定），工具只通过
+appconfig 提供图形来源，二选一：
+  ICON_DRAW(size)  -> PIL.Image   纯代码画（推荐，零美术素材；参考 l-s2t draw_mic）
+  ICON_ASSET       -> 相对仓库根的 png 路径（手工资产派生；参考 dsh，OVERRIDE 申报）
 
 生成两个 .ico：
-  local-speak2text.ico          托盘态：16/24/32/48/64/256 帧
-  local-speak2text-taskbar.ico  任务栏/窗口/exe：按 Windows 外壳真实索取的像素铺帧，
-                                覆盖 100%~200% DPI（标题栏/任务栏/Alt-Tab），避免缩小发糊。
+  <APP_ID>.ico          托盘态：16/24/32/48/64/256 帧
+  <APP_ID>-taskbar.ico  任务栏/窗口/exe：按 Windows 外壳真实索取的像素铺帧，
+                        覆盖 100%~200% DPI（标题栏/任务栏/Alt-Tab），缺档缩放发糊。
 
-颜色语义与运行时托盘一致：蓝 = 空闲，橙 = 录音中；ico 用蓝色（默认态）。
+build.bat 接入四件套：GATE `python src\\icons.py` -> PyInstaller `--icon
+<APP_ID>-taskbar.ico` -> 两个 ico `--add-data` 随包 -> 交付断言 taskbar ico 在位。
 """
-import math
 import os
+from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
-APP_ID = "local-speak2text"
-COLOR_IDLE = (30, 120, 230, 255)
-COLOR_RECORDING = (240, 140, 20, 255)
-
-
-def draw_mic(size, fill=COLOR_IDLE):
-    """在 size×size 画布上画麦克风（与 main.py 托盘图标同一设计）。"""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    s = size / 64.0  # 设计稿按 64 坐标
-    # 话筒头
-    d.rounded_rectangle([22 * s, 8 * s, 42 * s, 38 * s], radius=10 * s, fill=fill)
-    # 三条白色栅格线
-    for y in (15, 21, 27):
-        d.rectangle([26 * s, y * s, 38 * s, (y + 2) * s], fill=(255, 255, 255, 255))
-    # 支架弧
-    d.arc([18 * s, 28 * s, 46 * s, 56 * s], start=0, end=180, fill=fill, width=max(2, round(4 * s)))
-    # 立杆
-    d.rectangle([30 * s, 46 * s, 34 * s, 55 * s], fill=fill)
-    return img
-
+from modules.appconfig import APP_ID, ICON_DRAW, ICON_ASSET
 
 TRAY_SIZES = (16, 24, 32, 48, 64, 256)
-# 100%~200% DPI 下外壳真实索取的像素档（参见 reme-helper 同款清单）
+# 100%~200% DPI 下外壳真实索取的像素档（reme-helper 同款清单）
 TASKBAR_SIZES = (16, 20, 24, 28, 30, 32, 36, 40, 42, 48, 56, 64, 96, 128, 256)
+
+
+def base_image():
+    """图形来源二选一：ICON_ASSET 派生（统一 256 基图）优先，否则 ICON_DRAW(256)。"""
+    if ICON_ASSET:
+        asset = Path(ICON_ASSET)
+        if not asset.is_absolute():
+            # 相对路径按仓库根语义：向上找 main.py 所在的 src/，其父级即仓库根
+            # ——与本模块所在深度无关（src/icons.py 与 src/modules/icons/ 都命中）
+            _root = next((p for p in Path(__file__).resolve().parents
+                          if (p / "main.py").exists()),
+                         Path(__file__).resolve().parents[1]).parent
+            asset = _root / asset
+        img = Image.open(asset).convert("RGBA")
+        return img.resize((256, 256), Image.LANCZOS)
+    if ICON_DRAW:
+        return ICON_DRAW(256)
+    raise RuntimeError("appconfig must provide ICON_DRAW or ICON_ASSET (G5)")
 
 
 def make_icons(base_dir):
     """在 base_dir 下生成托盘态与任务栏态两个 ico，返回 (托盘, 任务栏) 路径。"""
     tray_path = os.path.join(base_dir, f"{APP_ID}.ico")
     taskbar_path = os.path.join(base_dir, f"{APP_ID}-taskbar.ico")
-    img = draw_mic(256, COLOR_IDLE)
+    img = base_image()
     img.save(tray_path, sizes=[(s, s) for s in TRAY_SIZES])
     img.save(taskbar_path, sizes=[(s, s) for s in TASKBAR_SIZES])
     return tray_path, taskbar_path
 
 
 if __name__ == "__main__":
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 仓库根（ico 落根，构建按根取）
+    # dev 态 ico 落仓库根：向上找 main.py 所在的 src/，其父级即根（与模块深度无关）
+    _src = next((p for p in Path(__file__).resolve().parents if (p / "main.py").exists()), None)
+    base = str(_src.parent) if _src else os.getcwd()
     t, k = make_icons(base)
     print("OK", t, k, "exists:", os.path.exists(t), os.path.exists(k))

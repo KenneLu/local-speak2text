@@ -68,7 +68,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile src/main.py src/pipeline.py src/paths.py src/icons.py src/updater.py src/keyboard_hook.py src/log_kit.py src/wasapi_probe.py src/modules/i18n/i18n.py
+"%PY%" -m py_compile src/main.py src/pipeline.py src/paths.py src/icons.py src/updater.py src/keyboard_hook.py src/wasapi_probe.py src/modules/i18n/i18n.py src/modules/appconfig/appconfig.py src/modules/log_kit/log_kit.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause
