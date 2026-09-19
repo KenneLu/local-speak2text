@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# TEMPLATE-MODULE: autostart | TEMPLATE-VER: 1.1.1
+# TEMPLATE-FROM: my-diy-tool-template/modules/autostart/autostart.py | TEMPLATE-VER: 1.1.1
 """T3｜开机自启三件套（蓝本 local-speak2text，规范 G4.1 认定的更优形态）。
 
 get_autostart_cmd 优先指向稳定安装位 INSTALL_EXE（路径永不因更新改变）；

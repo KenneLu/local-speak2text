@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# TEMPLATE-MODULE: tray_kit | TEMPLATE-VER: 2.0.1
+# TEMPLATE-FROM: my-diy-tool-template/modules/tray_kit/tray_kit.py | TEMPLATE-VER: 2.0.1
 """T7｜托盘机制件：单实例互斥体、退出请求文件 + 监视循环、面板地址行掩码、菜单签名重画、退出确认框（2.0.0）。
 
 蓝本：reme-helper（三循环/签名重画/退出纪律，执行文档 F13/D13/D14）与
