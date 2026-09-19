@@ -142,31 +142,12 @@ def _install_excepthooks():
 # "已在运行"，工具完全打不开。运行期守卫改由 tray_kit 派生同名互斥体；
 # test_single_instance 会真实占用一次、再用本名字探测，把「派生名 == 本名字」钉死。
 MUTEX_NAME = r"Local\%s-single-instance" % APP_ID
-ERROR_ALREADY_EXISTS = 183
 
 
-def mutex_name_is_valid():
-    """D3.1：诊断参数必须覆盖单实例守卫——只验"内核是否接受这个名字"，不占锁。
-
-    历史：`--smoke` 曾完全绕过守卫，于是「互斥体名含第二个反斜杠 → CreateMutexW
-    恒失败 → 被当成已有实例」这个故障在构建全绿的情况下活了 3 个月（1.2.0~1.4.0）。
-    这个函数就是让冒烟能在构建时把同类问题打红。失败方向同守卫：不确定就放行。
-    """
-    if os.name != "nt":
-        return True
-    import ctypes
-
-    try:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateMutexW.restype = ctypes.c_void_p
-        ctypes.set_last_error(0)
-        handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-        err = ctypes.get_last_error()
-    except Exception:
-        return True
-    if handle:
-        kernel32.CloseHandle(handle)   # 只探测，不持有
-    return bool(handle) and err in (0, ERROR_ALREADY_EXISTS)
+# 说明：探针已收敛到模板 tray_kit 2.2.0 的 `mutex_name_is_valid(app_id, mutex_name)`——
+# 它与守卫共用同一份命名判据 `mutex_name_ok()`（此处不再保留第二份定义）。
+# MUTEX_NAME 仍留在本文件：--smoke 显式把名字交给探针，同时也被 test_single_instance
+# 用来断言"派生名 == 这个名字"。
 
 
 # ---------- 配置 ----------
@@ -1072,8 +1053,9 @@ def smoke():
         base = os.path.dirname(os.path.abspath(__file__))
     log = os.path.join(base, "smoke.log")
     try:
-        # D3.1：冒烟必须覆盖单实例守卫（只验名字合法，不占锁）
-        if not mutex_name_is_valid():
+        # D3.1：冒烟必须覆盖单实例守卫——用 tray_kit 探针（只验名字合法，不占锁、
+        # 不弹窗），与运行期守卫共用同一份命名判据（2.2.0 的 mutex_name_ok）。
+        if not tray_kit.mutex_name_is_valid(APP_ID, mutex_name=MUTEX_NAME):
             raise RuntimeError("单实例互斥体名非法: " + MUTEX_NAME)
         load_config()
         if not os.path.isdir(MODEL_DIR):

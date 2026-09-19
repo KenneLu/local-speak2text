@@ -70,6 +70,14 @@ The tagging convention matches the versions in this file.
     one, writes the marker and keeps the snapshot"; plus sha256 fail-closed and
     pending-evidence retention. The bat runs with `CREATE_NO_WINDOW` and a `.vbs`
     fake exe so it cannot pop a console window on the user's desktop.
+- **Single-instance guard/probe converge on template `tray_kit` 2.2.0.** The
+  inline `mutex_name_is_valid()` in `main.py` is deleted (no second definition);
+  `--smoke` now calls `tray_kit.mutex_name_is_valid(APP_ID, mutex_name=MUTEX_NAME)`,
+  which shares one naming criterion (`mutex_name_ok`) with the guard. The guard
+  now fails **open** on an illegal name (logs it) instead of treating a
+  `CreateMutexW` failure as "already running" — turning that programming error
+  red is the build-time probe's job. `tests/test_single_instance.py` keeps the
+  semantics with two assertions: guard passes + logs, probe says invalid.
 - **New `--quit`**: asks a running instance to exit without the confirm
   dialog (request file lives under the redirectable data dir).
 - Icon graphics are single-sourced from `appconfig.ICON_DRAW` (runtime tray

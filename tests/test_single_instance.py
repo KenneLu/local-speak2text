@@ -13,7 +13,8 @@
      建+关（不持有）验内核接受——实例在跑时拿到 handle + err=183 同样算接受；
   ② 运行期真名：捕获式替身（记录 CreateMutexW 的 name 实参）证明 tray_kit
      真正传给内核的就是 MUTEX_NAME——不碰内核对象、不占生产锁，断言反而更直接；
-  ③ 旧非法名必须仍然失败（把根因钉死，防止有人改回去）；
+  ③ 非法名（历史根因：第二个反斜杠）：**守卫放行并记日志**，**探针判 False**
+     （2.2.0 起守卫不再碰内核——把编程错误变成"打不开"比漏一层保护更糟；打红交给构建期探针）；
   ④ 抢锁/拒绝：用测试专属名（Local\\<app>-test-<pid>，显式传 mutex_name=），
      绝不占用生产名；
   ⑤ 守卫自身出错时必须**放行**（失败方向为打开，否则工具会变砖）。
@@ -67,13 +68,21 @@ check("CreateMutexW accepts current name (0 or already-exists)",
 if h:
     k32.CloseHandle(h)   # 只探测，不持有
 
-ctypes.set_last_error(0)
-bad = k32.CreateMutexW(None, False, r"Local\%s\SingleInstance" % M.APP_ID)
-bad_err = ctypes.get_last_error()
-check("old illegal name still fails (root cause pinned)", not bad and bad_err == 3,
-      "err=%s" % bad_err)
-if bad:
-    k32.CloseHandle(bad)
+# ---------- ①b 非法名（2.2.0 语义：守卫不再碰内核，直接放行并记日志；探针判 False） ----------
+# 旧断言是"内核拒绝 err=3"。2.2.0 起守卫遇到非法名**根本不调 CreateMutexW**：
+# 那是编程错误，用户机器上"打不开"比"少一层保护"严重 ⇒ 放行（失败方向=打开，D3.2）；
+# 把它打红是构建期探针的职责（D3.3）。语义一条不丢，换成下面两条。
+ILLEGAL = r"Local\%s\SingleInstance" % M.APP_ID   # 第二个反斜杠：历史根因
+_logged = []
+check("guard fails OPEN on an illegal name",
+      tray_kit.acquire_single_instance(M.APP_ID, mutex_name=ILLEGAL,
+                                       log=_logged.append) is True)
+check("guard logged the illegal name (not silent)",
+      any("illegal mutex name" in str(m) for m in _logged), repr(_logged))
+check("probe judges the illegal name INVALID (build-time red)",
+      tray_kit.mutex_name_is_valid(M.APP_ID, mutex_name=ILLEGAL) is False)
+check("probe judges the real name VALID",
+      tray_kit.mutex_name_is_valid(M.APP_ID, mutex_name=M.MUTEX_NAME) is True)
 
 # ---------- ② 运行期真名：捕获式替身，完全不碰内核对象 ----------
 captured = []
