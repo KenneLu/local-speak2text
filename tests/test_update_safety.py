@@ -339,6 +339,33 @@ try:
     check("launch: empty cmd returns False", updater.launch_pending_cmd("") is False)
 finally:
     shutil.rmtree(_root_d, ignore_errors=True)
+
+
+# ==================== E. 成功路径的残留窄口：拷完却没有 exe ====================
+# 真实 robocopy 造不出这条（前置校验要求 stage 里有 exe，拷贝又成功 ⇒ 目标必有 exe），
+# 所以对**渲染出的脚本**做结构断言：必须走 :start_missing（写 marker + 保留现场），
+# 而不是旧的"只记日志，然后 goto cleanup（删 WORK 与 pending）"。
+_root_e = Path(tempfile.mkdtemp(prefix="l-s2t-startmissing-"))
+try:
+    _failed = _root_e / "update.failed"
+    _text = updater.build_apply_script(
+        target_dir=_root_e / "install", stage_dir=_root_e / "stage",
+        work_dir=_root_e / "work", backup_dir=_root_e / "backup",
+        log_path=_root_e / "update.log", snapshot_dir=_root_e / "snap",
+        failed_marker=_failed, pending_path=_root_e / "pending.json",
+        exe_name="probe.vbs", limit=2)
+    check("script: success path routes a missing exe to :start_missing",
+          "goto start_missing" in _text)
+    check("script: old 'log only then cleanup' shape is gone",
+          "new exe missing - not starting" not in _text)
+    _block = _text.split(":start_missing", 1)[1].split(":cleanup", 1)[0]
+    check("script: :start_missing writes the failure marker",
+          ("> \"%s\"" % _failed) in _block,
+          " | ".join(_block.strip().splitlines()[:2]))
+    check("script: :start_missing keeps the scene (cleanup_keep)",
+          "goto cleanup_keep" in _block)
+finally:
+    shutil.rmtree(_root_e, ignore_errors=True)
     shutil.rmtree(_TMP_DATA, ignore_errors=True)
 
 print("UPDATE SAFETY TEST " + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)

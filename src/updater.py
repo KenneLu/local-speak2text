@@ -216,10 +216,12 @@ if %RC% geq 8 goto install_failed
 if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
 move /y "%SNAPSHOT%" "%BACKUP%" >nul 2>nul
 del "{pending}" >nul 2>nul
-rem Guard the start: starting a missing exe pops a MODAL error box, and this script
-rem runs detached with no one to dismiss it - it would wedge forever.
-if not exist "{newexe}" echo [{stamp}] new exe missing - not starting >> "%LOG%"
-if exist "{newexe}" start "" "{newexe}"
+rem Copy judged successful but no exe in TARGET: that is a failure, not a log line.
+rem Starting a missing exe pops a MODAL box (no one can dismiss it in this detached,
+rem console-less script), and silently falling through to :cleanup would delete WORK
+rem and pending and destroy the scene. Align with :stage_invalid: marker + keep all.
+if not exist "{newexe}" goto start_missing
+start "" "{newexe}"
 echo [{stamp}] done >> "%LOG%"
 goto cleanup
 :install_failed
@@ -242,6 +244,12 @@ rem Nothing was copied, so the install dir still holds the previous (working) ve
 rem Report the failure and keep the staged files as evidence for manual inspection.
 > "{failed}" echo update failed {stamp}: staged exe missing at %STAGE%
 echo [{stamp}] STAGED EXE MISSING - install dir untouched, not starting >> "%LOG%"
+goto cleanup_keep
+:start_missing
+rem The copy reported success but TARGET has no exe. Do not start (modal box) and do not
+rem clean up: the rolled-out BACKUP and the staged WORK are the recovery material.
+> "{failed}" echo update failed {stamp}: no exe in TARGET after copy
+echo [{stamp}] NEW EXE MISSING AFTER COPY - not starting; kept WORK and BACKUP >> "%LOG%"
 goto cleanup_keep
 :giveup
 echo [{stamp}] aborted: {exe} still running after {limit}s >> "%LOG%"

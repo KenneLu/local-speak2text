@@ -59,6 +59,10 @@ The tagging convention matches the versions in this file.
     and the following `start` on the now-missing exe pops a modal box in a
     detached, console-less script (hangs forever). Now: no staged exe → don't
     touch the install dir, write the marker, keep the staged files.
+  * **"copy succeeded but no exe in target" is a failure too** (narrow remainder of
+    the same path): it now goes to `:start_missing` — writes the marker and keeps
+    WORK and BACKUP — instead of logging and falling through to `:cleanup`, which
+    deleted the staged files and the pending marker and left a dead install.
   * **The apply script is launched without a console.** The exit path used
     `os.system('start "" /min ...')`, which goes through `cmd` and flashes a
     console window on the desktop. It now uses `launch_pending_cmd()` —
