@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+# TEMPLATE-FROM: my-diy-tool-template/modules/appconfig/appconfig.py | TEMPLATE-VER: 1.0.1
 """local-speak2text 参数区（T1：拷贝模板后**唯一允许（也需要）修改的文件**）。
 
-工具差异只允许存在于一处（house 标准 D6 / D15）。本文件按设计豁免 sync_check 比对。
+工具差异只允许存在于一处（house 标准 D6 / D15）。本文件按设计豁免 sync_check 比对
+（参数文件），但头部仍申报来源，C-19 据此判定。
 说明：模板 appconfig 的 ICON_DRAW 示例签名是 (ctx, size)，但模板 icons.py 2.0.0 以
 `ICON_DRAW(256)` 单参调用；本工具取兼容形态 `ICON_DRAW(size, fill=...)`（T6 需要）。
-VERSION 暂仍住在 paths.py；paths 模板件落位后随之搬到这里（全仓唯一事实源）。
+VERSION 已按 A1-03/D15 集中到本文件，是全仓唯一事实源（build.bat / release.bat /
+release.yml 均从这里解析）。
 """
 APP_ID = "local-speak2text"
 APP_NAME = "LocalSpeak2Text"   # 历史注册表自启键名，改名 = 断链（NAME-05），不得擅动
