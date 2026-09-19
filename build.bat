@@ -197,21 +197,21 @@ if not exist "%RELEASE_DIR%\_internal\%APPNAME%-taskbar.ico" (
 
 rem ---------------------------------------------------------------------------
 rem Frozen check: the packaged exe must prove itself before shipping.
-rem LOCALSPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
+rem LOCAL_SPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
 rem (model_dir resolves via the upward fallback to the repo's asr-modules/).
-rem LOCALSPEAK2TEXT_DATA_DIR redirects the WHOLE data root into the release
+rem LOCAL_SPEAK2TEXT_DATA_DIR redirects the WHOLE data root into the release
 rem dir (F11/D12 instance isolation): without it the smoke writes its log into
 rem the user's live %LOCALAPPDATA%\local-speak2text\log, i.e. build tooling
 rem touches the running instance's files. Same as dsh/opencodex-helper.
 rem ---------------------------------------------------------------------------
 set "PYTHONUTF8=1"
-set "LOCALSPEAK2TEXT_CONFIG=%CD%\%RELEASE_DIR%\config.json"
-set "LOCALSPEAK2TEXT_DATA_DIR=%CD%\%RELEASE_DIR%\smoke-data"
+set "LOCAL_SPEAK2TEXT_CONFIG=%CD%\%RELEASE_DIR%\config.json"
+set "LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\%RELEASE_DIR%\smoke-data"
 echo [TEST] smoke test ...
 "%FROZEN_EXE%" --smoke
 set SMOKE_RC=%errorlevel%
-set "LOCALSPEAK2TEXT_CONFIG="
-set "LOCALSPEAK2TEXT_DATA_DIR="
+set "LOCAL_SPEAK2TEXT_CONFIG="
+set "LOCAL_SPEAK2TEXT_DATA_DIR="
 if exist "%RELEASE_DIR%\smoke.log" del /q "%RELEASE_DIR%\smoke.log"
 if exist "%RELEASE_DIR%\log" rmdir /s /q "%RELEASE_DIR%\log"
 if exist "%RELEASE_DIR%\smoke-data" rmdir /s /q "%RELEASE_DIR%\smoke-data"

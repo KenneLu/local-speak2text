@@ -19,8 +19,8 @@ from pathlib import Path
 
 # 实例隔离：必须在 import paths/main 之前重定向数据根与配置
 _TMP = tempfile.mkdtemp(prefix="l-s2t-startup-")
-os.environ["LOCALSPEAK2TEXT_DATA_DIR"] = _TMP
-os.environ["LOCALSPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
+os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 # 注：模板 tray_kit 的单实例守卫没有"多开豁免"开关（旧内联版那个开关已随守卫
 # 一起淘汰，历史记录见 CHANGELOG 1.2.0），这里不再 pop 任何开关——
 # 守卫在测试进程里按正常语义放行/拦下。

@@ -919,9 +919,14 @@ class Controller:
 
         choice = None
         try:
+            # 2.0.2：弹窗全部用户可见文案经参数注入 i18n 词条（模板不再硬编码中文）
             choice = tray_kit.confirm_quit_dialog(
                 APP_NAME, i18n.t("quit_confirm_cleanup"), checked,
-                parent=self.overlay.root, on_change=_persist)
+                parent=self.overlay.root, on_change=_persist,
+                title=i18n.t("quit_confirm_title"),
+                body_text=i18n.t("quit_confirm_body"),
+                confirm_text=i18n.t("quit_confirm_yes"),
+                cancel_text=i18n.t("quit_confirm_no"))
         except Exception as exc:
             log("quit dialog failed (%s: %s); falling back to native confirm"
                 % (type(exc).__name__, exc))
@@ -984,7 +989,13 @@ def main():
     # i18n 先于单实例守卫初始化：重复实例的提示框也要出正确的语言
     i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     if not tray_kit.acquire_single_instance(APP_ID, log=log):
-        tray_kit.warn_duplicate_instance(APP_NAME, hint=i18n.t("dup_hint"))
+        # 2.0.2：整段文案经 message/title 注入 i18n，英文模式不再出现中文外壳
+        tray_kit.warn_duplicate_instance(
+            APP_NAME,
+            message="\n\n".join([i18n.t("dup_running") % APP_NAME,
+                                 i18n.t("dup_hint"),
+                                 i18n.t("dup_cancelled")]),
+            title=APP_NAME)
         return 0
     process_pending_update()
     migrate_autostart(log=log)

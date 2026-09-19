@@ -56,7 +56,7 @@ log\           the app's log, one perf line per recognition (model, audio s, dec
 crash.log      uncaught exceptions land here if the app ever dies
 ```
 
-Key settings: `language` (`zh` / `en` / `auto`), `update_repo` (`owner/repo`, enables update checks), `num_threads` (ONNX threads — 8 measured fastest on a 16-thread CPU), `model_dir`. Point `LOCALSPEAK2TEXT_CONFIG` at a config file for tests/portable use; `LOCALSPEAK2TEXT_DATA_DIR` redirects the whole data root (tests/CI must use it so they never share files with a running tray instance).
+Key settings: `language` (`zh` / `en` / `auto`), `update_repo` (`owner/repo`, enables update checks), `num_threads` (ONNX threads — 8 measured fastest on a 16-thread CPU), `model_dir`. Point `LOCAL_SPEAK2TEXT_CONFIG` at a config file for tests/portable use; `LOCAL_SPEAK2TEXT_DATA_DIR` redirects the whole data root (tests/CI must use it so they never share files with a running tray instance).
 
 ## Updating
 

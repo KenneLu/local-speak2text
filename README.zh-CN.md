@@ -56,7 +56,7 @@ log\           应用日志，每次识别追加一行性能记录（模型、�
 crash.log      万一崩溃，未捕获异常落在这里
 ```
 
-常用配置：`language`（`zh` / `en` / `auto`）、`update_repo`（`用户名/仓库名`，填了才启用更新检查）、`num_threads`（ONNX 线程数——实测 16 线程 CPU 上 8 最快）、`model_dir`。测试/便携模式可用环境变量 `LOCALSPEAK2TEXT_CONFIG` 指定配置文件；`LOCALSPEAK2TEXT_DATA_DIR` 重定向整个数据根（测试/CI 必须用它，绝不能与常驻托盘实例共享任何落盘文件）。
+常用配置：`language`（`zh` / `en` / `auto`）、`update_repo`（`用户名/仓库名`，填了才启用更新检查）、`num_threads`（ONNX 线程数——实测 16 线程 CPU 上 8 最快）、`model_dir`。测试/便携模式可用环境变量 `LOCAL_SPEAK2TEXT_CONFIG` 指定配置文件；`LOCAL_SPEAK2TEXT_DATA_DIR` 重定向整个数据根（测试/CI 必须用它，绝不能与常驻托盘实例共享任何落盘文件）。
 
 ## 更新
 

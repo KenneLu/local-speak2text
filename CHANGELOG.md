@@ -23,10 +23,12 @@ The tagging convention matches the versions in this file.
   dialog (request file lives under the redirectable data dir).
 - Icon graphics are single-sourced from `appconfig.ICON_DRAW` (runtime tray
   and build-time `.ico` share one drawing function).
-- Two declared `TEMPLATE-LOCAL-OVERRIDE`s in `paths.py`, kept deliberately:
-  `LOCALSPEAK2TEXT_CONFIG` (template 1.1.2 has no `_CONFIG`), and the
-  `LOCALSPEAK2TEXT_*` env prefix (the template's `APP_ID`-derived name would
-  become `LOCAL_SPEAK2TEXT_*` and silently break instance isolation F11).
+- `paths.py` carries **no override** any more: template 1.1.3 implements the
+  `<APP>_CONFIG` env pin, and the env-var prefix is now the standard
+  `APP_ID.upper().replace('-','_')` derivation. The two environment variables
+  are therefore `LOCAL_SPEAK2TEXT_CONFIG` / `LOCAL_SPEAK2TEXT_DATA_DIR`
+  (previously written without the underscore — a one-off name that is now
+  retired, CONFORMANCE NAME-10).
 
 ## 1.4.1
 
@@ -48,9 +50,9 @@ The tagging convention matches the versions in this file.
   stubs, asserting the startup sequence is actually reached — `--smoke`
   bypasses the guard, which is why this defect survived three months of green
   builds. Both suites are now gates in `build.bat` (GATE 2b).
-- **Instance isolation**: `LOCALSPEAK2TEXT_DATA_DIR` now redirects the whole
-  data root (F11/D12, matches template `modules/paths` 1.1.2), so tests and
-  build scripts no longer share config/log with a running tray instance.
+- **Instance isolation**: `LOCAL_SPEAK2TEXT_DATA_DIR` redirects the whole
+  data root (F11/D12, template `modules/paths`), so tests and build scripts
+  no longer share config/log with a running tray instance.
 
 ## 1.4.0
 
