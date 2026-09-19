@@ -21,13 +21,13 @@ import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox
-import winreg
 
 import pystray
 from PIL import Image, ImageDraw
 
 from modules import i18n, log_kit   # noqa: E402
 from modules.appconfig import APP_ID, APP_NAME, VERSION
+from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
 from modules.paths import LOG_DIR, RUN_DIR, process_pending_update
 from updater import check_update, download_update, prepare_update_cmd
 from keyboard_hook import KeyboardHook
@@ -57,7 +57,6 @@ VK_V = 0x56
 KEYEVENTF_KEYUP = 0x0002
 DEBUG = os.environ.get("LST_DEBUG", "") == "1"
 
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 COLOR_IDLE = (30, 120, 230, 255)      # 空闲：蓝色
 COLOR_RECORDING = (240, 140, 20, 255) # 录制中：橙色
 
@@ -231,66 +230,7 @@ def save_config_dict(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
-# ---------- 开机自启 ----------
-
-def get_autostart_cmd():
-    if getattr(sys, "frozen", False):
-        # 打包实例：自启指向稳定安装位（若本 exe 就是从那里启动的，两者相同）。
-        # 开发态 exe（比如用户直接在 release 目录试用）启动时，仍注册稳定位——
-        # 那里将来由更新器安装正式版；稳定位还没有 exe 时退回注册当前路径。
-        from modules.paths import INSTALL_EXE, is_stable_install
-
-        if is_stable_install() or INSTALL_EXE.exists():
-            return '"%s"' % str(INSTALL_EXE)
-        return '"%s"' % os.path.abspath(sys.executable)
-    pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-    script = os.path.abspath(__file__)
-    if os.path.exists(pythonw):
-        return '"%s" "%s"' % (pythonw, script)
-    return '"%s" "%s"' % (sys.executable, script)
-
-
-def is_autostart_enabled():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as k:
-            winreg.QueryValueEx(k, APP_NAME)
-            return True
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return False
-
-
-def migrate_autostart():
-    """自启键指向的 exe 若已不存在（旧时间戳包/版本目录被删），重写到当前 exe。
-
-    历史：1.1.2 之前注册的是 out\\<时间戳>\\<工具名>-<版本>.exe——包一删就断链。
-    现在正式实例的"家"是稳定安装位 INSTALL_DIR，更新器装新版本写那里，路径永不变。
-    """
-    try:
-        current = os.path.abspath(sys.executable) if getattr(sys, "frozen", False) else None
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as k:
-            value, _ = winreg.QueryValueEx(k, APP_NAME)
-        wanted = '"%s"' % current
-        if value != wanted and not os.path.exists(value.strip('"')):
-            set_autostart(True)
-            dprint("autostart migrated:", value, "->", wanted)
-    except FileNotFoundError:
-        pass
-    except OSError:
-        pass
-
-
-def set_autostart(enabled):
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-        if enabled:
-            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, get_autostart_cmd())
-        else:
-            try:
-                winreg.DeleteValue(k, APP_NAME)
-            except FileNotFoundError:
-                pass
-
+# ---------- 开机自启（T3 autostart；target="stable" = 指向稳定安装位） ----------
 
 # ---------- 托盘图标 ----------
 
@@ -1023,7 +963,7 @@ def main():
         warn_duplicate_instance()
         return 0
     process_pending_update()
-    migrate_autostart()
+    migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
     overlay = Overlay()
     ctrl = Controller(overlay, None)

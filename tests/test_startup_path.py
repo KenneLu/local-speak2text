@@ -97,7 +97,7 @@ M.Tray = _FakeTray
 M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
 M.process_pending_update = lambda: CALLS.__setitem__("pending", CALLS["pending"] + 1)
-M.migrate_autostart = lambda: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
+M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
 
 rc = M.main()
 

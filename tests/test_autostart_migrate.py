@@ -11,11 +11,18 @@ import sys
 import winreg
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import main as M  # noqa: E402
+_SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(_SRC))
+from modules import autostart as A  # noqa: E402
+from modules.appconfig import APP_NAME  # noqa: E402
+
+# 模板 autostart 的源码态命令行取自 sys.argv[0]（被启动的脚本）。测试进程的
+# argv[0] 是本测试文件；把它指向真实入口 main.py，才能验证「重写成 pythonw +
+# 入口脚本」这一形态（测试替身只换 argv，不改被测函数语义）。
+sys.argv[0] = str(_SRC / "main.py")
 
 RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = M.APP_NAME
+VALUE_NAME = APP_NAME
 fake = '"\\\\nonexistent\\old-pkg\\local-speak2text-1.0.exe"'
 
 
@@ -46,7 +53,7 @@ try:
     write_run_value(fake)
     print("planted broken:", fake, flush=True)
 
-    M.migrate_autostart()
+    A.migrate_autostart()
 
     _ok, after = read_run_value()
     print("after migrate :", after, flush=True)
