@@ -19,14 +19,16 @@ set "RELEASE_BRANCH=main"
 set DRY_RUN=
 if /i "%~1"=="--dry-run" set DRY_RUN=1
 
-rem Version from appconfig.py - the app and the tag can never disagree
+rem Version from appconfig.py - the app and the tag can never disagree.
+rem Two-step parse (split on '=', drop quotes, first token) so a trailing comment
+rem on the VERSION line can never leak into the tag name. Same as build.bat.
 set VERSION=
-for /f "tokens=2,*" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%~b
+for /f "tokens=2 delims==" %%a in ('findstr /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%a
+for /f "tokens=1" %%a in ("%VERSION:"=%") do set VERSION=%%a
 if not defined VERSION (
   echo [ERROR] Cannot read VERSION from src\modules\appconfig\appconfig.py.
   exit /b 1
 )
-set VERSION=%VERSION:"=%
 set TAG=v%VERSION%
 echo [VERSION] %VERSION%   [TAG] %TAG%
 
