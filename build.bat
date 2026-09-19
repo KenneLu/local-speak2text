@@ -226,6 +226,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem GATE 2i: the C-2 delete-guard must be WIRED, and wired EARLY. The mechanical
+rem   check (C-27) only proves the symbol is referenced somewhere; the template
+rem   README's requirement is a TIMING one ("before the tray/window is created -
+rem   the order may not move later"), so a call placed after Tray() would satisfy
+rem   "is referenced" while violating what the README actually asks for. This
+rem   test records the call order and asserts guard < overlay < tray. Proven to
+rem   discriminate: with the call moved after Tray() the ordering assertions go
+rem   red while "called exactly once" stays green; with the call deleted, three go red.
+echo [TEST] C-2 delete-guard wiring (order: guard before window/tray) ...
+"%PY%" tests\test_delete_guard_wired.py
+if errorlevel 1 (
+  echo [ERROR] delete-guard wiring test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
 set "LOCAL_SPEAK2TEXT_DATA_DIR="
 if exist "%CD%\build\test-data" rmdir /s /q "%CD%\build\test-data"
 

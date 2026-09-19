@@ -28,7 +28,8 @@ from modules import i18n, log_kit, tray_kit   # noqa: E402
 from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
                                ICON_DRAW, VERSION)
 from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
-from modules.paths import LOG_DIR, RUN_DIR, USER_DATA_DIR
+from modules.paths import (LOG_DIR, RUN_DIR, USER_DATA_DIR,
+                           hold_exe_delete_guard)
 from updater import (check_update, download_update, prepare_update_cmd,
                      process_pending_update, pop_failed_update_note,
                      launch_pending_cmd)
@@ -1019,6 +1020,11 @@ def main():
                                  i18n.t("dup_cancelled")]),
             title=APP_NAME)
         return 0
+    # C-2（paths 1.1.4）：让**内核**替我们拒绝"删除/改名正在运行的实例目录"，而不是靠纪律。
+    # **必须在托盘/窗口创建之前**（README 采纳步骤第 4 条："顺序不能再往后挪"）——所以放在
+    # 守卫放行之后、`Overlay()`/`Tray()` 之前，而不是紧贴 `Overlay()`：这样更新兜底与自启
+    # 自愈这两步也落在保护窗口内。失败放行 / dev 态跳过都在被调函数里（D3.2），这里不判返回值。
+    hold_exe_delete_guard(log=log)
     process_pending_update(log=log)
     migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
