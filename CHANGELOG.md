@@ -59,6 +59,11 @@ The tagging convention matches the versions in this file.
     and the following `start` on the now-missing exe pops a modal box in a
     detached, console-less script (hangs forever). Now: no staged exe → don't
     touch the install dir, write the marker, keep the staged files.
+  * **The apply script is launched without a console.** The exit path used
+    `os.system('start "" /min ...')`, which goes through `cmd` and flashes a
+    console window on the desktop. It now uses `launch_pending_cmd()` —
+    `CREATE_NO_WINDOW | DETACHED_PROCESS`, the reme form — so the script
+    outlives the parent without any visible window.
   * New `tests/test_update_safety.py` (build.bat **GATE 2d**): the rendered
     `.bat` is really executed for both success and a failure injection
     (`robocopy` rc=16), asserting "failure starts the old version, never the new

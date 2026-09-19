@@ -30,7 +30,8 @@ from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
 from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
 from modules.paths import LOG_DIR, RUN_DIR, USER_DATA_DIR
 from updater import (check_update, download_update, prepare_update_cmd,
-                     process_pending_update, pop_failed_update_note)
+                     process_pending_update, pop_failed_update_note,
+                     launch_pending_cmd)
 from keyboard_hook import KeyboardHook
 from pipeline import (
     AsrEngine,
@@ -1057,7 +1058,8 @@ def main():
         log("exit")
         quit_stop.set()
         if ctrl.update_cmd_path and ctrl.quit_apply_update:
-            os.system('start "" /min "%s"' % ctrl.update_cmd_path)
+            # 无控制台、脱离父进程地拉起替换脚本（旧 os.system('start /min') 会闪黑框）
+            launch_pending_cmd(ctrl.update_cmd_path, log=log)
         ctrl.hook.stop()
         tray.stop()
 

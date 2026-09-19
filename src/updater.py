@@ -274,6 +274,26 @@ def build_apply_script(target_dir, stage_dir, work_dir, backup_dir, log_path,
     )
 
 
+def launch_pending_cmd(cmd=None, log=lambda *_a: None):
+    """在退出收尾处拉起替换脚本，返回是否已拉起。
+
+    必须**无控制台且脱离父进程**（`CREATE_NO_WINDOW | DETACHED_PROCESS`，reme 形态）：
+    本进程马上就要退出，bat 要活到替换完成；若它挂着控制台，用户桌面会闪黑框。
+    旧写法 `os.system('start "" /min ...')` 会经由 cmd 起一个控制台——正是要消除的那一下。
+    """
+    if not cmd or os.name != "nt":
+        return False
+    flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+             | getattr(subprocess, "DETACHED_PROCESS", 0))
+    try:
+        subprocess.Popen(["cmd.exe", "/c", str(cmd)], creationflags=flags, close_fds=True)
+    except OSError as exc:
+        log("launch pending failed: %s" % exc)
+        return False
+    log("pending update launched: %s" % cmd)
+    return True
+
+
 def failed_marker_path(update_dir=None):
     """失败 marker 位置：数据区一眼可见，且与会被删的暂存目录分开。"""
     return Path(update_dir or UPDATE_DIR).parent / FAILED_MARKER_NAME

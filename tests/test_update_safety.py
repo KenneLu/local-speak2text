@@ -300,6 +300,45 @@ try:
           not updater.failed_marker_path(work3).exists())
 finally:
     shutil.rmtree(_root_c, ignore_errors=True)
+
+
+# ==================== D. launch_pending_cmd：无控制台 + 脱离父进程 ====================
+_root_d = Path(tempfile.mkdtemp(prefix="l-s2t-launch-"))
+try:
+    # D1 旗标断言：必须是 CREATE_NO_WINDOW | DETACHED_PROCESS，且是 list 形式（无 shell）
+    seen = {}
+    _real_popen = subprocess.Popen
+
+    class _FakePopen:
+        def __init__(self, args, **kwargs):
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+
+    updater.subprocess.Popen = _FakePopen
+    try:
+        launched = updater.launch_pending_cmd(str(_root_d / "fake.bat"))
+    finally:
+        updater.subprocess.Popen = _real_popen
+    flags = seen.get("kwargs", {}).get("creationflags", 0)
+    check("launch: Popen used (list argv, no shell)", seen.get("args", [None])[0] == "cmd.exe",
+          repr(seen.get("args")))
+    check("launch: CREATE_NO_WINDOW set",
+          bool(flags & getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+    check("launch: DETACHED_PROCESS set",
+          bool(flags & getattr(subprocess, "DETACHED_PROCESS", 0)))
+    check("launch: returns True", launched is True)
+
+    # D2 真实拉起：脚本写 marker 后退出；调用立即返回，脚本继续跑完
+    marker = _root_d / "ran.txt"
+    script = _root_d / "probe.bat"
+    script.write_text('@echo off\r\necho ok > "%~dp0ran.txt"\r\n',
+                      encoding="ascii", newline="")
+    check("launch: real start returned True",
+          updater.launch_pending_cmd(str(script)) is True)
+    check("launch: detached script actually ran", _wait_for(marker, 15.0))
+    check("launch: empty cmd returns False", updater.launch_pending_cmd("") is False)
+finally:
+    shutil.rmtree(_root_d, ignore_errors=True)
     shutil.rmtree(_TMP_DATA, ignore_errors=True)
 
 print("UPDATE SAFETY TEST " + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)
