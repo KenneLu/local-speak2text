@@ -736,6 +736,25 @@ def open_mic_stream(callback, sample_rate=SAMPLE_RATE):
     return None
 
 
+def _similarity(actual, reference):
+    """两个字符串的**字符级重合率**（0..1）：`difflib` 的最长匹配块占比。
+
+    为什么不用"命中词数"：词表判据**只在输入被钉住时才成立**，而本门禁的测试 wav
+    并非仓库资产（本地 `asr-modules/` 与 CI 下载的是两句不同的话，见 `selftest` 里的长注释）。
+    重合率对"同一句话 + ASR 少量波动"给高分（>=0.9），对"另一句话/乱码"给低分（<0.4），
+    既保留"识别出乱码必须红"的判别力，又不把判据绑死在某一份 wav 上。
+
+    只做标点/空白归一化（标点有无是 ASR 的正常波动），不做分词——不引第三方依赖。
+    """
+    import difflib
+    import re as _re
+    strip = lambda s: _re.sub(r"[\s，。、！？,.!?；;：:\"'“”‘’（）()]", "", s)
+    a, b = strip(actual or ""), strip(reference or "")
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
 def selftest(wav_path):
     """用 WAV 文件模拟完整流水线（不进界面），打印定稿文本。"""
     import wave
@@ -820,17 +839,34 @@ def selftest(wav_path):
     print("=" * 40)
     print("定稿文本:", committed)
     # 结果断言（2026-09-19 补）：旧写法只断言 wav 格式，识别出乱码也照样绿。
-    # 只钉**稳定项**、不做整句相等——实测 sensevoice / qwen3 / fireredasr 三个本地模型
-    # 对同一 wav 都产出"欢迎大家来体验达摩院推出的语音识别模型"，取交集词判据：
-    # 命中 >=2 个即正常，容忍 ASR 的少量波动，但空输出或乱码一定红。
+    #
+    # ⚠ 2026-09-20 修（CI 连红三轮的真凶，v1.4.1/.2/.3 都卡在这里）：
+    # **本门禁的"期望文本"依赖一个仓库没有钉住的输入** —— 测试 wav 是本地 `asr-modules/`
+    # 里放的那一份，而 CI 的 release.yml 下载的是 **sensevoice 那个 release 自带的
+    # `test_wavs/zh.wav`**，两份**根本不是同一句话**。实测：
+    #   * 本机 wav（paraformer 那句）→「欢迎大家来体验达摩院推出的语音识别模型」
+    #   * CI 下载的 wav          →「开饭时间早上9点至下午5点。」
+    # 旧写法只认 `("欢迎","达摩院","语音")` ⇒ CI 上必红、本机必绿，且**与新代码毫无关系**
+    # （v1.4.0 发版时这条断言还不存在，所以"以前是绿的"）。
+    #
+    # 修法：把已知的两句都列为参照，用**字符级重合率**判定——容忍 ASR 的小波动，
+    # 但乱码/空输出仍然必红（乱码对哪一句的重合率都极低）。这比"钉词表"更贴合实际：
+    # **期望值必须跟着输入走，而输入此刻并未被仓库钉住**。
+    # 若哪天 CI/本机换成第三份 wav，报错会把识别文本和两个重合率一并打出来 —— 加一行参照即可。
     if not committed.strip():
         raise RuntimeError("自检失败：定稿文本为空（模型加载成功但没有任何输出）")
-    _STABLE_TOKENS = ("欢迎", "达摩院", "语音")
-    _hits = [tok for tok in _STABLE_TOKENS if tok in committed]
-    if len(_hits) < 2:
+    _REFS = (
+        "欢迎大家来体验达摩院推出的语音识别模型",   # 本机 asr-modules/ 的 test_zh.wav
+        "开饭时间早上9点至下午5点",                 # CI 下载的 sensevoice release test_wavs/zh.wav
+    )
+    _ratios = [(_ref, _similarity(committed, _ref)) for _ref in _REFS]
+    _best_ref, _best = max(_ratios, key=lambda kv: kv[1])
+    print("与参照文本的重合率:", ["%s=%.2f" % (r[:6], v) for r, v in _ratios])
+    if _best < 0.6:
         raise RuntimeError(
-            "自检失败：定稿文本与预期相差过大（命中稳定项 %r，期望 >=2 个，候选 %r）：%r"
-            % (_hits, list(_STABLE_TOKENS), committed))
+            "自检失败：定稿文本与任何参照都相差过大（最高 %.2f < 0.6，参照 %r，"
+            "实测 %r）。若换过测试 wav，把它的正确文本加进 _REFS 即可。"
+            % (_best, [r for r, _ in _ratios], committed))
 
 
 if __name__ == "__main__":

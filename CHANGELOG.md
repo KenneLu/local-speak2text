@@ -3,6 +3,29 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.5
+- **GATE 3's expected text depended on an input the repo does not pin.** The pipeline selftest
+  asserted that the transcript contains >=2 of `("欢迎","达摩院","语音")` - the sentence from the
+  **paraformer** test wav that happens to sit in a local `asr-modules/`. CI's release workflow
+  downloads the **sensevoice** model release and copies *its* `test_wavs/zh.wav`, which is a
+  different sentence: it transcribes as `开饭时间早上9点至下午5点。` So the gate could never pass
+  in CI and always passed locally, with no relation to the code under test (it did not exist at
+  v1.4.0, which is why "it used to be green"). Found via the `::error::` annotation added in
+  1.4.4, which printed the transcript and the token list.
+- **The assertion is now a character-overlap ratio against a set of known references** (>=0.6 to
+  the best match, punctuation/whitespace normalised, stdlib `difflib` only). Measured:
+  local utterance 1.00, CI utterance 1.00, a plausible ASR wobble 0.95, garbage 0.00, empty
+  0.00 - so the "must not pass on garbage" power is kept while the criterion follows the input
+  instead of being welded to one file. Both ratios are printed on every run, and the failure
+  message says to add the reference if the wav changes.
+- **VERSION 1.4.4 -> 1.4.5.** v1.4.1/.2/.3/.4 all went red in the release workflow and none was
+  published; the packaged binary is unchanged by this release.
+
+> The underlying gap is registered, not hidden: a gate whose expected value comes from an
+> unpinned input can only ever be as reliable as that input. The durable fix is to make the
+> test wav a repo asset (or vendor a reference transcript next to it); this release makes the
+> criterion correct for both known inputs and self-describing for a third.
+
 ## 1.4.4
 - **The release workflow can now tell you which gate failed.** GATE 2d's two red runs cost
   three tags partly because a failing gate names itself only in `build.bat`'s log, and **step
