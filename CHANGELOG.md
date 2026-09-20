@@ -3,6 +3,17 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.4
+- **The release workflow can now tell you which gate failed.** GATE 2d's two red runs cost
+  three tags partly because a failing gate names itself only in `build.bat`'s log, and **step
+  logs require sign-in while run-page annotations are public text**. The build is now teed to
+  `build.log` and, on failure, its last 45 lines are emitted as an `::error::` annotation.
+- **Gates 2e-2i now also run on every push** (`tests.yml`), not only inside `build.bat` during a
+  tag-triggered release. They use stubs and redirect their data root, so they need no ASR model.
+  GATE 2d failing first had been masking them on CI; they all pass (run 35491266499).
+- **VERSION 1.4.3 -> 1.4.4.** v1.4.1/.2/.3 all went red in the release workflow and none was
+  published. The packaged binary is unchanged.
+
 ## 1.4.3
 - **GATE 2d was handing cmd.exe a file the product never produces: the stand-in apply script was
   written LF-only** (2026-09-20, root cause of the two red CI runs). `update_helper` writes the
