@@ -78,9 +78,20 @@ rem Normalize a trailing backslash WITHOUT the `"%~1"=="\"` idiom: cmd parses
 rem the sequence backslash-quote specially and aborts the whole script with
 rem "The syntax of the command is incorrect." -- and it fires on the
 rem "no instance running" path, i.e. the guard broke the very build it exists
-rem to protect. `%%~fd` strips the trailing backslash for us (same idiom as
-rem TARGET_DIR below).
-if defined RUNNING_DIR for %%d in ("%RUNNING_DIR%") do set "RUNNING_DIR=%%~fd"
+rem to protect.
+rem
+rem MEASURED 2026-09-20 (verifier): `%%~fd` does NOT strip the trailing
+rem backslash here -- `for %%d in ("C:\aa\bb\") do ... %%~fd` yields `C:\aa\bb\`
+rem unchanged. The previous line relied on that false premise, so RUNNING_DIR
+rem kept its trailing `\` and NEVER matched TARGET_DIR (which comes from
+rem `"%CD%\%RELEASE_DIR%"`, no trailing `\`) => the running-instance guard was
+rem dead, and the `rmdir /s /q` below went first: a live instance's release dir
+rem was HOLLOWED OUT (exe survives via the C2 handle, but `_internal/`,
+rem `locales/`, `README.md` were all deleted) before the lock made it fail.
+rem That is exactly the 2026-09-19 incident this guard exists to prevent.
+rem Fix = same idiom as dsh/ocx (substring on the ACTION side; the `:~` ban in
+rem the C-43 criterion applies to `if` CONDITIONS, not to `set`).
+if defined RUNNING_DIR set "RUNNING_DIR=%RUNNING_DIR:~0,-1%"
 set "TARGET_DIR="
 for %%d in ("%CD%\%RELEASE_DIR%") do set "TARGET_DIR=%%~fd"
 if defined RUNNING_DIR if /i "%RUNNING_DIR%"=="%TARGET_DIR%" (
