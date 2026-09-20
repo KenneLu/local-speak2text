@@ -3,7 +3,11 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
-## Unreleased
+## 1.4.1
+- **The update chain now uses the shared template module** (2026-09-20, task #32/B5). src/updater.py (a 21 KB fork) is deleted; modules/update_helper/ 1.4.5 is adopted byte-for-byte. The template grew the two interfaces this needed: optional repo= on check_update/download_and_prepare (so config.json:update_repo stays runtime-configurable - the README promise, the update_no_repo string and the factory default all depend on it) and optional exe_name= (the stand-in hook the four test call sites need in order to render probe.exe instead of the real exe).
+- **The startup fallback process_pending_update is intentionally removed**: an interrupted update is now covered by the apply script's :giveup plus the update.failed marker and pop_failed_update_note, and leftovers by sweep_stale_update_dirs (wired into startup). paths.UPDATE_PENDING loses its consumer; removing it from paths.py is a separate cascade and is not part of this release.
+- **All four pre-swap verifications from the work order now have tests**: both start paths guarded per label, sweep clears both kinds (directories and *.bat) with control samples and a negative control, F11 isolation proved by asserting gettempdir() first, and the three C-27 MUST-WIRE symbols referenced from main.py.
+- **VERSION 1.4.0 -> 1.4.1.**
 
 > 1.4.1 was never released: its single-instance root-cause fix is merged into this
 > section and `VERSION` is rolled back to the last released version 1.4.0
