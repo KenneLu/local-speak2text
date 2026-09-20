@@ -302,6 +302,36 @@ def _dump_bat_scene(tag, root, p, bat_stem="apply"):
     print("    LOG exists=%s body=%r" % (lg.exists(), _safe_read(lg)), flush=True)
     mk = p["failed"]
     print("    MARKER exists=%s body=%r" % (mk.exists(), _safe_read(mk)), flush=True)
+    _gha_annotate("root=%s\n%s\n%s\nLOG=%r\nbat_survived=%s"
+                  % (root,
+                     _tail(root / ("%s.err" % bat_stem)),
+                     _tail(root / ("%s.out" % bat_stem), limit=2500),
+                     _safe_read(p["log"]), (root / ("%s.bat" % bat_stem)).exists()),
+                  title="update-safety diagnostics (%s)" % tag)
+
+
+def _tail(path, limit=1200):
+    """落盘文件的尾部（取证用；文件不在就明确说"不在"）。"""
+    if not path.exists():
+        return "%s: MISSING" % path.name
+    body = path.read_bytes().decode("utf-8", "replace")
+    return "%s (%d bytes, tail %d)=%r" % (path.name, len(body), limit, body[-limit:])
+
+
+def _gha_annotate(text, title="update-safety diagnostics"):
+    """把取证块以 GitHub Actions 的 `::error::` 工作流命令打出去。
+
+    为什么非要有这条通道（2026-09-20 实测）：**CI 的步骤日志需要登录才能读**
+    （匿名访问只看到 "Sign in to view logs"），而 run 摘要页上的**注解（annotation）
+    是公开可读的文本**。本文件在 CI 上失败时，能把证据带出来的就只有注解。
+
+    协议细节：工作流命令是**单行**的，消息里的换行必须写成 `%0A`，而 `%` 自身要先转义成
+    `%25`（顺序不能反，否则会把转义符再转义一遍）。不转义的话第二行起会被 runner 当成
+    普通输出丢弃——那正是"留了证据却没人看得见"。
+    """
+    body = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+    for i in range(0, len(body), 60000):      # 注解有长度上限，超了切成多条
+        print("::error title=%s::%s" % (title, body[i:i + 60000]), flush=True)
 
 
 def _reached_terminal(log_text):

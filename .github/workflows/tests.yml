@@ -37,6 +37,15 @@ jobs:
         # watched. The module that REPLACED it is listed instead.
         run: python -m py_compile src/main.py src/pipeline.py src/modules/i18n/i18n.py src/icons.py src/modules/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py src/modules/autostart/autostart.py src/modules/tray_kit/tray_kit.py
 
+      # GATE 2d from build.bat, run here as well. It needs no ASR model, and until now the
+      # only thing that ran it was the tag-triggered release workflow - which is exactly why
+      # an environment-dependent failure inside it stayed invisible until a release was cut
+      # and then blocked that release. On failure it emits `::error::` annotations carrying
+      # the bat's captured stdout/stderr, the update log and an @echo on trace, so the
+      # evidence is readable without signing in to the run's logs.
+      - name: Update chain safety (GATE 2d)
+        run: python tests/test_update_safety.py
+
       - name: i18n coverage
         run: |
           python -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
