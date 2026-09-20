@@ -263,7 +263,18 @@ def _run_bat(root, p, limit=25.0, echo_on=False):
     if echo_on:
         text = text.replace("@echo off", "@echo on", 1)
     bat = root / ("apply-echo.bat" if echo_on else "apply.bat")
-    bat.write_text(text, encoding="ascii", newline="")
+    # 行尾**必须与产品落盘的字节一致**：`update_helper.download_and_prepare()` 用
+    # `script.write_text(text, encoding="mbcs")`（不传 newline）⇒ Windows 的文本模式把
+    # `\n` 翻成 `\r\n`。旧写法传了 `newline=""`，于是**测试喂给 cmd 的是一个 LF-only 的
+    # bat，而产品永远不会产生这种文件**。
+    # 代价（2026-09-20 实测，CI 门禁因此连红两轮）：cmd.exe 对 LF-only 批处理文件的
+    # `goto` 标签查找**与字节相位有关**——同一份内容，root 路径长度落在 79..85 字节时
+    # `goto stage_invalid` 报 "The system cannot find the batch label specified"，
+    # 落在 78 或 86+ 就正常（判据：`_verify-scratch/bat-label-band-sweep.py` 的逐长度扫描）。
+    # CI 的根路径 `C:\Users\RUNNER~1\AppData\Local\Temp\l-s2t-upd-temp-XXXX\l-s2t-bat-YYYY`
+    # 正好 79 字节，本机 `H:\Tools\_verify-scratch\l-s2t-bat-XXXX` 只有 ~45 字节 ⇒ 这就是
+    # "CI 红、本机 5/5 绿"的全部原因。写 CRLF 后该坏带在 47 个长度上全部消失。
+    bat.write_text(text, encoding="ascii", newline="\r\n")
     out_path = root / (bat.stem + ".out")
     err_path = root / (bat.stem + ".err")
     started = time.time()

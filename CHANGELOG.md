@@ -3,13 +3,40 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.3
+- **GATE 2d was handing cmd.exe a file the product never produces: the stand-in apply script was
+  written LF-only** (2026-09-20, root cause of the two red CI runs). `update_helper` writes the
+  script with `script.write_text(text, encoding="mbcs")`; with the default `newline=None`,
+  Windows text mode turns every `\n` into `\r\n`. The test passed `newline=""`, which **disables**
+  that translation - so the gate exercised an LF-only `.bat`, measured 6409 bytes vs the
+  product's 6523. cmd.exe's `goto` label lookup on an LF-only batch file is **phase-sensitive**:
+  sweeping 47 root-path lengths with everything else identical, `goto stage_invalid` fails with
+  "The system cannot find the batch label specified" for root lengths **79-85** and succeeds at
+  78 and 86+. CI's scratch root is
+  `C:\Users\RUNNER~1\AppData\Local\Temp\l-s2t-upd-temp-XXXX\l-s2t-bat-YYYY` = **79 bytes**; this
+  machine's is `H:\Tools\_verify-scratch\l-s2t-bat-XXXX` = ~45. That is the whole of "CI red,
+  local 5/5 green". Writing CRLF (as the product does) removes the band: **0 bad lengths of 47**.
+  Proof: `_verify-scratch/bat-label-band-sweep.py` (LF, 7 bad) and
+  `_verify-scratch/bat-label-crlf-sweep.py` (CRLF, 0 bad), same renderer and same 47 lengths.
+- **VERSION 1.4.2 -> 1.4.3.** v1.4.1 and v1.4.2 both went red in this gate and neither was
+  published; the packaged binary is functionally unchanged - the fix is in the gate.
+
+> A correction, recorded rather than quietly dropped: the 1.4.2 entry below attributed the CI
+> red to two other defects. **That attribution was wrong.** Those two are real and worth fixing,
+> but neither caused this failure. The tell was in hand all along: the bat's own stderr said
+> `cannot find the batch label specified - stage_invalid`, and I had "refuted" the line-ending
+> hypothesis earlier by checking the module file's bytes on disk (CRLF) instead of the string
+> the code actually hands to cmd (LF, because Python applies universal-newline translation when
+> reading source). Two further wrong turns came from the same habit: asserting a mechanism
+> before measuring it. The measurement that settled it was a length sweep, not an argument.
+
 ## 1.4.2
 - **The gate no longer asserts asynchronous side effects as verdicts** (2026-09-20). GATE 2d
   (tests/test_update_safety.py) used to decide "the previous version was brought back" and "the
   new version was started" by waiting for a marker file written by a `.vbs` launched through
-  `start ""`. On CI that check failed while the same bytes passed 5/5 locally. Two
-  **measured** disturbance sources were involved, both already adjudicated and fixed in
-  reme-helper's equivalent gate, and both re-introduced by this repo's newer test:
+  `start ""`. Two **measured** disturbance sources were fixed here - both already adjudicated
+  and fixed in reme-helper's equivalent gate, both re-introduced by this repo's newer test
+  (they are real, but **not** the cause of the CI red - see 1.4.3):
   (1) **robocopy treats a destination as "the same file" and skips it when size AND timestamp
   match** - the two stand-in probe scripts differed only in `started-old.txt` vs
   `started-new.txt`, i.e. identical length, written microseconds apart, so the new-version copy
@@ -31,17 +58,19 @@ The tagging convention matches the versions in this file.
   published; the packaged binary is functionally unchanged by this release - the fix is in the
   gate that blocked it.
 
-> Investigation record (honest boundary): the **true mechanism on CI is undetermined**. Four
-> candidate mechanisms were each **refuted** by an independent probe that night (`rem` containing
-> `|`, `rem` containing `>`, "a failed redirection aborts the batch", LF-only batch files; probes
-> live in `_verify-scratch/`). This repo does not reproduce it in 5/5 runs, and the CI log
-> requires sign-in to read. So this entry lands on "remove the two **measured** disturbance
-> sources + turn 'the script did not finish' into a **named** criterion + keep full evidence on
-> failure", and does not claim to have located the cause.
+> Investigation record (**superseded by 1.4.3 - the cause was found**; kept as written so the
+> wrong turns stay on the record). At this point the mechanism was **undetermined**: four
+> candidates had each been **refuted** by an independent probe (`rem` containing `|`, `rem`
+> containing `>`, "a failed redirection aborts the batch", LF-only batch files; probes live in
+> `_verify-scratch/`). One of those four "refutations" was wrong - the LF one - because it
+> checked the module file's bytes on disk instead of the string the code hands to cmd. What
+> actually found the cause was a **length sweep**, and the evidence that the gate was wrong had
+> been in the bat's own stderr from the first CI run.
 
 - **门禁不再把"异步副作用"当判据**（2026-09-20）。GATE 2d 原本用"等 `.vbs` 写出的 marker
-  文件"来判"旧版被拉回""新版被启动"。CI 上这一格红、而同一份字节本机 5/5 绿。涉及两条
-  **已实测**的扰动源，reme-helper 的同类门禁**早已裁定并修掉**，是本仓较新的测试重新引入的：
+  文件"来判"旧版被拉回""新版被启动"。涉及两条**已实测**的扰动源，reme-helper 的同类门禁
+  **早已裁定并修掉**，是本仓较新的测试重新引入的（**它们是真缺陷，但不是 CI 红的原因** ——
+  真正原因见 1.4.3）：
   ① **robocopy 在"大小 + 时间戳都相同"时把目标当成同一个文件直接跳过**——两份替身脚本只差
   `started-old.txt` / `started-new.txt`（**等长**）且同一时钟 tick 内写下，铺新版那次被静默跳过
   （reme 实测约三次一次；本文件 `_bat_success` 的重试正是在盖这个）；② **连续跑门禁时
@@ -58,10 +87,11 @@ The tagging convention matches the versions in this file.
 - **VERSION 1.4.1 -> 1.4.2。** v1.4.1 的 CI 正是在这条门禁上失败，因此从未发布；本版**打包产物
   功能上无改动**，修的是挡住它的那条门禁。
 
-> 调查记账（诚实边界）：CI 上那一格的**真实机制未定**。当晚用独立探针逐条**证伪**了四个候选：
-> `rem` 行里的 `|`、`rem` 行里的 `>`、重定向失败中止批处理、LF-only 批处理（探针在
-> `_verify-scratch/`）。本仓 5/5 复现不出，CI 日志需登录才能读。因此本条落到"消除已知的两条
-> **实测**扰动源 + 把'脚本没跑完'变成一条**有名字的**判据 + 失败时留全证据"，而不是声称已定位。
+> 调查记账（**已被 1.4.3 取代——原因找到了**；原文保留，让走过的弯路留在案上）。写这条时
+> **真实机制未定**：四个候选各被一件独立探针**证伪**（`rem` 行里的 `|`、`rem` 行里的 `>`、
+> 重定向失败中止批处理、LF-only 批处理）。**其中"LF 被证伪"那一次是错的** —— 它量的是模块
+> 文件在盘上的字节，而不是代码真正交给 cmd 的那个字符串。真正定位靠的是**逐长度扫描**，
+> 而"门禁错了"的证据从第一次 CI 红起就写在 bat 自己的 stderr 里。
 
 ## 1.4.1
 - **The update chain now uses the shared template module** (2026-09-20, task #32/B5). src/updater.py (a 21 KB fork) is deleted; modules/update_helper/ 1.4.5 is adopted byte-for-byte. The template grew the two interfaces this needed: optional repo= on check_update/download_and_prepare (so config.json:update_repo stays runtime-configurable - the README promise, the update_no_repo string and the factory default all depend on it) and optional exe_name= (the stand-in hook the four test call sites need in order to render probe.exe instead of the real exe).
