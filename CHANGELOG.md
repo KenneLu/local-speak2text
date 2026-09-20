@@ -3,6 +3,66 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.2
+- **The gate no longer asserts asynchronous side effects as verdicts** (2026-09-20). GATE 2d
+  (tests/test_update_safety.py) used to decide "the previous version was brought back" and "the
+  new version was started" by waiting for a marker file written by a `.vbs` launched through
+  `start ""`. On CI that check failed while the same bytes passed 5/5 locally. Two
+  **measured** disturbance sources were involved, both already adjudicated and fixed in
+  reme-helper's equivalent gate, and both re-introduced by this repo's newer test:
+  (1) **robocopy treats a destination as "the same file" and skips it when size AND timestamp
+  match** - the two stand-in probe scripts differed only in `started-old.txt` vs
+  `started-new.txt`, i.e. identical length, written microseconds apart, so the new-version copy
+  was silently skipped (reme measured ~1 run in 3; the `_bat_success` retry in this file was
+  papering over exactly that); (2) **`start ""` can be refused under repeated gate runs**
+  (desktop heap pressure). Verdicts now rest on **deterministic** evidence - the log branch line
+  plus the install-directory contents - while the launched-process marker is only **observed**,
+  never judged. The now-unnecessary `_bat_success` retry is gone because its cause is fixed.
+- **A script that never reached a terminal state is now named as such, with a retry and full
+  forensics.** The template bat writes exactly one terminal log line on every exit path
+  (`done` / `STAGE INVALID` / `restored - starting previous version` / `RESTORE FAILED` /
+  `aborted:`), so "did the harness actually run the script to the end" is mechanically checkable
+  and is now its own ok/FAIL. On failure the scenario re-runs once, then dumps the bat's captured
+  stdout/stderr, the log, the marker and an `@echo on` per-line trace into the CI log. Also:
+  `_stage()` now resets `update.failed` / `update.log` per scenario, which removes two
+  cross-scenario false greens (`failure marker written` had been passing on the previous
+  scenario's marker).
+- **VERSION 1.4.1 -> 1.4.2.** v1.4.1's CI run failed in this gate, so v1.4.1 was never
+  published; the packaged binary is functionally unchanged by this release - the fix is in the
+  gate that blocked it.
+
+> Investigation record (honest boundary): the **true mechanism on CI is undetermined**. Four
+> candidate mechanisms were each **refuted** by an independent probe that night (`rem` containing
+> `|`, `rem` containing `>`, "a failed redirection aborts the batch", LF-only batch files; probes
+> live in `_verify-scratch/`). This repo does not reproduce it in 5/5 runs, and the CI log
+> requires sign-in to read. So this entry lands on "remove the two **measured** disturbance
+> sources + turn 'the script did not finish' into a **named** criterion + keep full evidence on
+> failure", and does not claim to have located the cause.
+
+- **门禁不再把"异步副作用"当判据**（2026-09-20）。GATE 2d 原本用"等 `.vbs` 写出的 marker
+  文件"来判"旧版被拉回""新版被启动"。CI 上这一格红、而同一份字节本机 5/5 绿。涉及两条
+  **已实测**的扰动源，reme-helper 的同类门禁**早已裁定并修掉**，是本仓较新的测试重新引入的：
+  ① **robocopy 在"大小 + 时间戳都相同"时把目标当成同一个文件直接跳过**——两份替身脚本只差
+  `started-old.txt` / `started-new.txt`（**等长**）且同一时钟 tick 内写下，铺新版那次被静默跳过
+  （reme 实测约三次一次；本文件 `_bat_success` 的重试正是在盖这个）；② **连续跑门禁时
+  `start ""` 可能被拒绝建进程**（桌面堆压力）。现在判定只用**确定性**证据——日志分支行 +
+  安装目录内容；"进程有没有被拉起来"只**观察**、不判定。`_bat_success` 那次重试随之删除
+  （成因已修，不再需要盖）。
+- **"脚本没跑到终态"变成一条有名字的判据，带重试与完整取证。** 模板 bat 的每条收尾路径都会
+  写且只写一行终态（`done` / `STAGE INVALID` / `restored - starting previous version` /
+  `RESTORE FAILED` / `aborted:`），于是"harness 到底有没有把脚本跑完"是可机械核对的，现已是
+  独立的 ok/FAIL。失败时同一场景重跑一次，然后把 bat 的 stdout/stderr、日志、marker 以及
+  `@echo on` 的**逐行 trace** 全部打进 CI 日志。另外 `_stage()` 现在按场景清
+  `update.failed` / `update.log`，消掉两处跨场景假绿（`failure marker written` 一直靠上一场景
+  留下的 marker 变绿）。
+- **VERSION 1.4.1 -> 1.4.2。** v1.4.1 的 CI 正是在这条门禁上失败，因此从未发布；本版**打包产物
+  功能上无改动**，修的是挡住它的那条门禁。
+
+> 调查记账（诚实边界）：CI 上那一格的**真实机制未定**。当晚用独立探针逐条**证伪**了四个候选：
+> `rem` 行里的 `|`、`rem` 行里的 `>`、重定向失败中止批处理、LF-only 批处理（探针在
+> `_verify-scratch/`）。本仓 5/5 复现不出，CI 日志需登录才能读。因此本条落到"消除已知的两条
+> **实测**扰动源 + 把'脚本没跑完'变成一条**有名字的**判据 + 失败时留全证据"，而不是声称已定位。
+
 ## 1.4.1
 - **The update chain now uses the shared template module** (2026-09-20, task #32/B5). src/updater.py (a 21 KB fork) is deleted; modules/update_helper/ 1.4.5 is adopted byte-for-byte. The template grew the two interfaces this needed: optional repo= on check_update/download_and_prepare (so config.json:update_repo stays runtime-configurable - the README promise, the update_no_repo string and the factory default all depend on it) and optional exe_name= (the stand-in hook the four test call sites need in order to render probe.exe instead of the real exe).
 - **The startup fallback process_pending_update is intentionally removed**: an interrupted update is now covered by the apply script's :giveup plus the update.failed marker and pop_failed_update_note, and leftovers by sweep_stale_update_dirs (wired into startup). paths.UPDATE_PENDING loses its consumer; removing it from paths.py is a separate cascade and is not part of this release.
