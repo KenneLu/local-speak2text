@@ -31,7 +31,11 @@ jobs:
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
       # roundtrip runs only where asr-modules/ exists (local machine).
       - name: Compile check
-        run: python -m py_compile src/main.py src/pipeline.py src/modules/i18n/i18n.py src/icons.py src/updater.py src/keyboard_hook.py src/wasapi_probe.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py src/modules/autostart/autostart.py src/modules/tray_kit/tray_kit.py
+        # src/updater.py was DELETED by the B5 template swap (9cf285f) but stayed in this
+        # list, so `py_compile` failed on a missing file and this workflow has been red on
+        # every push since - unnoticed because only the tag-triggered release workflow was
+        # watched. The module that REPLACED it is listed instead.
+        run: python -m py_compile src/main.py src/pipeline.py src/modules/i18n/i18n.py src/icons.py src/modules/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py src/modules/autostart/autostart.py src/modules/tray_kit/tray_kit.py
 
       - name: i18n coverage
         run: |
