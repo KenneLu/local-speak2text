@@ -46,6 +46,25 @@ jobs:
       - name: Update chain safety (GATE 2d)
         run: python tests/test_update_safety.py
 
+      # The gates after GATE 2d, one step each so a failure names the gate in the UI.
+      # They use stubs and redirect their data root, so they need no ASR model - and
+      # until now they ran ONLY inside build.bat (i.e. only in the tag-triggered
+      # release workflow). GATE 2d failing first had been masking them on CI.
+      - name: Quit decision (GATE 2e)
+        run: python tests/test_quit_failopen.py
+
+      - name: Engine model dir (GATE 2f)
+        run: python tests/test_engine_model_dir.py
+
+      - name: Main-side model dir (GATE 2g)
+        run: python tests/test_main_model_dir.py
+
+      - name: Update poll matcher (GATE 2h)
+        run: python tests/test_poll_matcher.py
+
+      - name: Delete-guard wiring (GATE 2i)
+        run: python tests/test_delete_guard_wired.py
+
       - name: i18n coverage
         run: |
           python -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"

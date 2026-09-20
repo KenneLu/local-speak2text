@@ -66,9 +66,24 @@ jobs:
       # The smoke gate pins LOCAL_SPEAK2TEXT_CONFIG to the release folder's
       # shipped config (model_dir relative to the exe); pipeline's upward
       # fallback resolves it to the asr-modules/ downloaded above.
+      #
+      # The log is teed to build.log and, on failure, its tail is emitted as a
+      # `::error::` annotation. Reason (2026-09-20): a failing gate names itself in
+      # this log and nowhere else, and **step logs require sign-in to read** while
+      # run-page annotations are public text. Without this, "which gate failed" was
+      # only answerable by bisecting with tags - which is how v1.4.1/.2/.3 were all
+      # spent. Newlines are escaped as %0A and `%` as %25 because a workflow command
+      # is a single line; unescaped, everything after the first line is discarded.
       - name: Build release
-        shell: cmd
-        run: build.bat norun nopause
+        shell: pwsh
+        run: |
+          cmd /c "build.bat norun nopause" 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = Get-Content build.log -Tail 45 |
+              ForEach-Object { $_ -replace '%', '%25' }
+            Write-Host ("::error title=build.bat failed::" + ($tail -join '%0A'))
+            exit 1
+          }
 
       - name: Package zip
         shell: pwsh
