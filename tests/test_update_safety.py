@@ -1,28 +1,32 @@
 # -*- coding: utf-8 -*-
-"""更新链安全语义的真实执行回归（sha256 fail-closed / 替换脚本 rc 与回退 / pending 不销毁证据）。
+"""更新链安全语义的真实执行回归（模板 `modules/update_helper` 版）。
 
-背景（2026-09-19，与全家族刚修的一类缺陷同源）：
-  ① `download_update` 拿不到 `.sha256` 就 `skip verify` = **fail-open**；
-  ② `apply.cmd` 用固定 `timeout /t 2` 等旧进程、**不判 robocopy rc**、**无条件**
-     启动新 exe——铺设失败也会去拉半铺的安装目录；
-  ③ `paths.process_pending_update` 不判 rc，失败时照样删 pending 与整个 update 目录，
-     把**暂存源连同失败证据一起销毁**。
+本文件随 **B5**（fork `src/updater.py` → 模板 `modules/update_helper/`，施工单
+`UPDATER-SWAP-ls2t.md`）整体改写：断言对象从自家 fork 换成**模板件**，并补上施工单
+§5 要求"切前必补"的四项验证：
 
-本测试**真跑**替换脚本（不 mock bat），用 GUI 子系统的 `.vbs` 当假 exe 观察"到底
-启动了哪个版本"：
-  * 脚本执行一律 `creationflags=CREATE_NO_WINDOW`——否则控制台子系统会**在用户桌面
-    弹出可见窗口**，窗口 cwd 还会让收尾删除失败、留下空壳目录（用户已截图报障）；
-  * 假 exe 用 `.vbs`（`start` 关联到 GUI 的 `wscript.exe`），不开控台窗口。
+  ① **两条 `start` 路径的存在性守卫回归**（模板 L237/L253 各处 start 各自验）；
+  ② **`sweep_stale_update_dirs` 两类都清**（暂存目录 + `*-update.bat` 文件），带对照样本；
+  ③ **F11 实例隔离**：`sweep` 会 glob `%TEMP%`，本测试把 `tempfile.tempdir` 钉到
+     隔离目录，**绝不扫用户真实临时目录**（先自证隔离，再断言）；
+  ④ **C-27 MUST-WIRE 三符号**在 `main.py` 真有引用（dsh/ocx 踩过"拷到位零引用"）。
 
-三组断言：
-  A. sha256：期望值缺失 / 不匹配 → 失败；匹配 → 通过。
-  B. 替换脚本真跑：成功路径铺新版；失败注入（STAGE 不存在 ⇒ robocopy rc=16）
-     **不启动新版本**、回退后启动旧版本、写 `update.failed`、保留快照。
-  C. `process_pending_update`：成功才清 pending 与暂存；rc>=8（注入）时 pending、
-     暂存、现场全保留并写 marker。
+保留的安全断言（语义与模板 README「替换脚本的语义要点」逐条对应）：
+  A. sha256 期望值缺失 / 不匹配 → 失败（fail-closed）；
+  B. 真跑替换脚本：成功铺新版且轮转备份；失败注入（rc>=8）回铺后启动旧版；
+     回铺也失败（`:install_dead`）**什么都不启动**；空暂存包（`:stage_invalid`）
+     **不碰安装目录、把旧版拉回来**（模板 1.4.2 起的行为，fork 没有）；
+  D. `launch_pending_cmd`：CREATE_NO_WINDOW | DETACHED_PROCESS，list argv；
+  E. 渲染文本的结构面：每处 `start` 各自带存在性守卫 + 每标签块 start 数 = 设计值；
+  F. 单元级控制：把真跑中走不到的分支（超时红灯、只读自证兜底）跑一遍；
+  G. sweep 两类都清 + 隔离 + 对照样本；
+  H. 接线（C-27）。
+
+隔离：数据根用 `LOCAL_SPEAK2TEXT_DATA_DIR` 重定向；替换脚本用 GUI 子系统 `.vbs`
+当假 exe（R1「替身必须存在」——目标恒存在，判"是否被启动"只看副作用 marker）。
 """
-import json
 import os
+import re
 import shutil
 import subprocess
 import stat
@@ -30,15 +34,25 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
 from _cleanup import clear_readonly, rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手）
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# 实例隔离：必须在 import updater（它会 import modules.paths）之前重定向数据根。
+# 实例隔离：必须在 import modules.update_helper（它会 import modules.paths）之前重定向数据根。
 _TMP_DATA = scratch_dir("l-s2t-upd-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP_DATA
 
-import updater  # noqa: E402
+# F11（施工单 §5 第 3 项）：sweep_stale_update_dirs 会 glob `%TEMP%`。测试必须用**隔离的
+# `%TEMP%`**，否则它会去扫用户真实临时目录（可能删掉别的工具/本工具在跑的更新残留）。
+# `tempfile.tempdir` 显式钉死 + TEMP/TMP 环境变量一并改（对子进程也生效）。
+_TMP_TEMP = scratch_dir("l-s2t-upd-temp-")
+os.environ["TEMP"] = _TMP_TEMP
+os.environ["TMP"] = _TMP_TEMP
+tempfile.tempdir = _TMP_TEMP
+
+from modules import update_helper as U  # noqa: E402
+from modules.appconfig import APP_ID  # noqa: E402
 
 FAILS = []
 _CLEANED = []
@@ -82,18 +96,18 @@ def _probe_vbs(marker):
 # ==================== A. sha256 fail-closed ====================
 _payload = Path(_TMP_DATA) / "payload.bin"
 _payload.write_bytes(b"hello-update")
-_good = updater._sha256(_payload)
+_good = U._sha256(_payload)
 check("sha256: missing expected value fails closed",
-      updater.verify_zip_sha256(_payload, "")[0] is False)
+      U.verify_zip_sha256(_payload, "")[0] is False)
 check("sha256: whitespace-only expected value fails closed",
-      updater.verify_zip_sha256(_payload, "   \n")[0] is False)
-check("sha256: mismatch fails", updater.verify_zip_sha256(_payload, "deadbeef")[0] is False)
-check("sha256: match passes", updater.verify_zip_sha256(_payload, _good)[0] is True)
+      U.verify_zip_sha256(_payload, "   \n")[0] is False)
+check("sha256: mismatch fails", U.verify_zip_sha256(_payload, "deadbeef")[0] is False)
+check("sha256: match passes", U.verify_zip_sha256(_payload, _good)[0] is True)
 check("sha256: real '<hash>  <name>' line passes",
-      updater.verify_zip_sha256(_payload, "%s  payload.bin" % _good)[0] is True)
+      U.verify_zip_sha256(_payload, "%s  payload.bin" % _good)[0] is True)
 
 
-# ==================== B. 替换脚本真跑 ====================
+# ==================== B. 替换脚本真跑（模板 bat） ====================
 # R1（2026-09-19 lead 裁定，全家族硬性）：**替身必须永远存在**。
 # `start "" "<不存在的目标>"` 会弹模态框——`.exe` 是"找不到文件"，`.vbs` 是
 # Windows Script Host 的"无法找到脚本文件"，两者都会把无 console 的 detached 脚本
@@ -109,7 +123,7 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
     backup = root / "_backup"
     # 重置：**每个**上一场景可能留下的目录都要先解只读再删——只读位会被 robocopy
     # 复制进快照/备份目录（实测），漏掉一处就会让下一场景的 rmtree 静默失败、
-    # 进而写文件时报 PermissionError（本文件 2026-09-19 就这样红过一次）。
+    # 进而写文件时报 PermissionError。
     for d in (install, stage, work, snapshot, backup):
         if d.exists():
             clear_readonly(d)
@@ -126,17 +140,8 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
     (install / "probe.vbs").write_text(_probe_vbs("started-old.txt"), encoding="ascii")
     # 只读保险（lead 令，2026-09-19）：`del <file>` / `os.unlink` / Python `rmtree`
     # 都删不掉它，于是没有哪一步能把它弄丢、让后面的 `start` 指向空气。
-    #
-    # ⚠️⚠️ **只读是部分保险，不是结构保证 —— 而"只读让弹窗在文件系统层面不可能发生"
-    # 这句是早期误述（lead 本人更正，复核员曾照抄进 harness 的 docstring）。别再抄它。**
-    # 实测边界如下（本机 Windows，2026-09-19）：
-    #   挡得住：`del <file>` / `os.remove` / `shutil.rmtree`      → PermissionError
-    #   挡不住：`rmdir /s /q <父目录>`                            → rc=0，目录消失
-    #           `robocopy /e /purge` 覆盖                          → rc=3，内容被覆盖且 R 位被清掉
-    # 定位：它是"多一层删不掉"的兜底，**不能替代**——R1（替身常在）+ 三处 `start`
-    # 存在性守卫（C-26 结构断言）+ R4 超时变红。三者才是让弹窗不可能发生的那套。
-    # 真正让这条注释不可反驳的是 F 组的单元级控制：它们证明这些分支**真的会红**，
-    # 而不只是"写在文档里"。
+    # ⚠️ 只读是部分保险，不是结构保证（`rmdir /s /q <父目录>` 与 `robocopy /e /purge`
+    # 都能绕过它）。定位：多一层兜底，**不能替代** R1 + 三处 start 守卫 + R4 超时变红。
     os.chmod(install / "probe.vbs", stat.S_IREAD)
     (install / "data-old.txt").write_text("old", encoding="utf-8")
     if not stage_missing and not stage_empty:
@@ -146,11 +151,9 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
         (stage / "locked.bin").write_bytes(b"x")
     if bad_snapshot:
         # 让"快照"步骤失败：SNAPSHOT 路径上先放一个**文件**。实测 `rmdir /s /q`
-        # 对它报"目录名无效"、`robocopy TARGET SNAPSHOT` 返回 rc=16，于是
+        # 对它报"目录名无效"、`robocopy SNAPSHOT TARGET` 返回 rc=16，于是
         # :install_failed 的**回铺也失败** → 走到 :install_dead（且 TARGET 仍有 exe）。
         snapshot.write_text("not a directory", encoding="ascii")
-    pending = root / "update.pending.json"
-    pending.write_text("{}", encoding="utf-8")
     return {
         "install": install,
         "stage": stage if not stage_missing else (root / "no-such-stage"),
@@ -159,7 +162,6 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
         "snapshot": snapshot,
         "failed": root / "update.failed",
         "log": root / "update.log",
-        "pending": pending,
     }
 
 
@@ -190,11 +192,12 @@ def _run_bat(root, p, limit=25.0):
     R4：**超时即红**，并在消息里点名"疑似模态框"——挂死比失败更糟（CI 挂住不报错）。
     超时后尽力关掉本次 root 触发的 wscript/cscript，避免把模态框留在用户桌面上。
     """
-    text = updater.build_apply_script(
+    # 模板 build_apply_script 签名（1.4.5）：无 pending_path（fork 的"落盘 pending"已随
+    # 切模板消失）；exe_name= 是测试替身口子。
+    text = U.build_apply_script(
         target_dir=p["install"], stage_dir=p["stage"], work_dir=p["work"],
         backup_dir=p["backup"], log_path=p["log"], snapshot_dir=p["snapshot"],
-        failed_marker=p["failed"], pending_path=p["pending"],
-        exe_name="probe.vbs", limit=2)
+        failed_marker=p["failed"], exe_name="probe.vbs", limit=2)
     bat = root / "apply.bat"
     bat.write_text(text, encoding="ascii", newline="")
     started = time.time()
@@ -216,19 +219,12 @@ def _check_no_hang(label, elapsed, timed_out, limit=20.0):
 
 
 def _readonly_selfproof(probe_path):
-    """只读保险自证：删除**必须**失败。返回 (ok, detail)。
-
-    抽成函数的理由（复核员方法，2026-09-19）：这段原本内联在 `_bat_success` 里，于是
-    "删成功了 → 立刻把替身写回"这条**兜底分支**在 35+ 次真跑中一次都没被覆盖过
-    （每次都抛 PermissionError）。**分支存在 ≠ 分支被覆盖**——抽出来之后可以在
-    `_unit_controls()` 里用可写文件直接调它，不跑 bat、不 start、更不用造"目标缺失"。
-    """
+    """只读保险自证：删除**必须**失败。返回 (ok, detail)。"""
     try:
         os.remove(probe_path)
     except OSError as exc:
         return True, type(exc).__name__
-    # 保护没生效：文件已经没了。**立刻写回**——绝不能带着缺失的 `start` 目标往下跑
-    # （那才是弹模态框的形态）。红灯由调用方的 check 给出。
+    # 保护没生效：文件已经没了。**立刻写回**——绝不能带着缺失的 `start` 目标往下跑。
     probe_path.write_text(_probe_vbs("started-old.txt"), encoding="ascii")
     return False, "delete SUCCEEDED - read-only NOT in effect (file rewritten)"
 
@@ -240,8 +236,6 @@ def _bat_success(root):
     # retry - the semantics under test (what the script does) are unchanged.
     for attempt in (1, 2):
         p = _stage(root)
-        # 自证（lead 令）：只读保险必须**真的生效**，否则这条加固等于没加。
-        # 在测试窗口期内尝试删除替身——必须失败。用副作用判据，不看属性字符串。
         _ro_ok, _ro_detail = _readonly_selfproof(p["install"] / "probe.vbs")
         check("fake exe is read-only (self-proof: delete must fail)", _ro_ok, _ro_detail)
         elapsed, timed_out = _run_bat(root, p)
@@ -256,7 +250,6 @@ def _bat_success(root):
           (p["backup"] / "data-old.txt").exists() and not p["snapshot"].exists())
     check("bat success: no failure marker", not p["failed"].exists())
     check("bat success: work dir cleaned", not p["work"].exists())
-    check("bat success: pending marker removed", not p["pending"].exists())
 
 
 def _lock_exclusive(path):
@@ -276,12 +269,7 @@ def _unlock(handle):
 
 
 def _lock_no_delete(path):
-    """打开文件：**允许别人读写、但禁止删除**（share=READ|WRITE，不含 DELETE）。
-
-    和 `_lock_exclusive(share=0)` 的区别很关键——share=0 会把**读**也挡住，
-    那样注入的是"读失败"，不是我们要测的"删失败"。Windows 上 `os.unlink` 只要有
-    一个句柄没带 FILE_SHARE_DELETE 就会失败，而 read/write 不受影响。
-    """
+    """打开文件：**允许别人读写、但禁止删除**（share=READ|WRITE，不含 DELETE）。"""
     import ctypes
     from ctypes import wintypes
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -313,24 +301,14 @@ def _bat_failure(root):
           and not (p["install"] / "data-new.txt").exists())
     check("bat failure: marker written", p["failed"].exists())
     check("bat failure: snapshot kept for manual recovery", p["snapshot"].exists())
-    check("bat failure: pending kept for diagnosis", p["pending"].exists())
+    check("bat failure: work kept for manual recovery", p["work"].exists())
     log_text = p["log"].read_text(encoding="utf-8", errors="replace")
     check("bat failure: log records the failed rc", "INSTALL FAILED rc=" in log_text,
           log_text[-100:].replace("\n", " | "))
 
 
 def _bat_failure_no_restore(root):
-    """回铺也失败（快照不可用）→ 必须走到 :install_dead 且**什么都不启动**。
-
-    ⚠️ 场景构造按 R1 改写：**不再**用"目标里没有 exe"来制造这条路径（那等于把
-    测试变成模态框炸弹——守卫一旦回归，`start` 一个不存在的 `.vbs` 会让 WSH 弹
-    "无法找到脚本文件"并永久挂死）。现在 TARGET **始终有** probe.vbs，
-    用"快照路径是文件"让回铺失败：
-      stage 里一个文件被独占锁 → 前向拷贝 rc>=8 → :install_failed
-      → 从 SNAPSHOT 回铺（SNAPSHOT 是文件）→ rc=16 → :install_dead
-    判"没启动"看**副作用**：两个 marker 都不该出现（若守卫回归真启动了旧版，
-    started-old.txt 会被写出来 → 红灯；而且命中的是**存在的**文件，不会弹模态框）。
-    """
+    """回铺也失败（快照不可用）→ 必须走到 :install_dead 且**什么都不启动**。"""
     p = _stage(root, bad_snapshot=True, lock_staged=True)
     locked = p["stage"] / "locked.bin"
     h = _lock_exclusive(locked)
@@ -351,25 +329,26 @@ def _bat_failure_no_restore(root):
 
 
 def _bat_empty_stage(root):
-    """空 STAGE（有目录、无 exe）：robocopy 会返回 rc=0（"没复制也没出错"）。
+    """空 STAGE（有目录、无 exe）——模板 1.4.2 起的行为与 fork 不同，是本轮重点回归：
 
-    若只看 rc 就判成功，/purge 已把安装目录清空，随后 start 一个不存在的 exe 会弹
-    模态框、把无 console 的 detached 脚本永久卡死。正确行为：**在碰安装目录之前**就
-    识别出来——不拷、不启动、写 marker、保留现场，脚本正常退出。
+    模板 `:stage_invalid` **把旧版本拉回来**（`if exist "{newexe}" start "" "{newexe}"`，
+    L245），fork 只写 marker + 日志、更新失败后应用一直关着。两者都**不碰安装目录**、
+    不启动新版本、保留现场；差别在"旧版是否被拉回"。
     """
     p = _stage(root, stage_empty=True)
     elapsed, timed_out = _run_bat(root, p)
     _check_no_hang("bat empty-stage", elapsed, timed_out)
-    check("bat empty-stage: nothing started",
-          not (p["install"] / "started-new.txt").exists()
-          and not (p["install"] / "started-old.txt").exists())
+    check("bat empty-stage: new version NOT started",
+          not (p["install"] / "started-new.txt").exists())
+    check("bat empty-stage: previous version pulled back (template >= 1.4.2)",
+          _wait_for(p["install"] / "started-old.txt"))
     check("bat empty-stage: install dir untouched (old payload still there)",
           (p["install"] / "data-old.txt").exists()
           and (p["install"] / "probe.vbs").exists())
     check("bat empty-stage: failure marker written", p["failed"].exists())
-    check("bat empty-stage: pending kept for diagnosis", p["pending"].exists())
+    check("bat empty-stage: work kept for manual inspection", p["work"].exists())
     log_text = p["log"].read_text(encoding="utf-8", errors="replace")
-    check("bat empty-stage: log records the refusal", "STAGED EXE MISSING" in log_text,
+    check("bat empty-stage: log records the refusal", "STAGE INVALID" in log_text,
           log_text[-100:].replace("\n", " | "))
 
 
@@ -381,84 +360,6 @@ try:
     _bat_empty_stage(_root_b)
 finally:
     _clean(_root_b)
-
-
-# ==================== C. process_pending_update 不销毁证据 ====================
-_root_c = Path(scratch_dir("l-s2t-pending-"))
-try:
-    # C1 真实成功：robocopy 真跑，rc<8 → 清 pending 与暂存
-    staged = _root_c / "staged"
-    target = _root_c / "app"
-    work = _root_c / "update"
-    staged.mkdir(); target.mkdir(); work.mkdir()
-    (staged / "new.txt").write_text("n", encoding="utf-8")
-    (work / "leftover.txt").write_text("l", encoding="utf-8")
-    pending = _root_c / "update.pending.json"
-    pending.write_text(json.dumps({"staged": str(staged), "target": str(target)}),
-                       encoding="utf-8")
-    ok = updater.process_pending_update(pending_path=pending, update_dir=work)
-    check("pending success: returns True", ok is True)
-    check("pending success: file copied", (target / "new.txt").exists())
-    check("pending success: pending removed", not pending.exists())
-    check("pending success: update dir removed", not work.exists())
-
-    # C2 被打断：staged 不存在 → 早退且**什么都不动**
-    work2 = _root_c / "update2"; work2.mkdir()
-    pending2 = _root_c / "update2.pending.json"
-    pending2.write_text(json.dumps({"staged": str(_root_c / "no-such"),
-                                    "target": str(target)}), encoding="utf-8")
-    ok = updater.process_pending_update(pending_path=pending2, update_dir=work2)
-    check("pending incomplete: returns False", ok is False)
-    check("pending incomplete: pending kept", pending2.exists())
-    check("pending incomplete: update dir kept", work2.exists())
-
-    # C3 rc>=8（注入 robocopy 返回码）：不删 pending、不删暂存、写 marker
-    work3 = _root_c / "update3"; work3.mkdir()
-    (work3 / "evidence.txt").write_text("e", encoding="utf-8")
-    staged3 = _root_c / "staged3"; staged3.mkdir()
-    pending3 = _root_c / "update3.pending.json"
-    pending3.write_text(json.dumps({"staged": str(staged3), "target": str(target)}),
-                        encoding="utf-8")
-    _real_run = subprocess.run
-
-    class _Fail:
-        returncode = 16
-
-    updater.subprocess.run = lambda *a, **k: _Fail()
-    try:
-        ok = updater.process_pending_update(pending_path=pending3, update_dir=work3)
-    finally:
-        updater.subprocess.run = _real_run
-    check("pending rc>=8: returns False", ok is False)
-    check("pending rc>=8: pending kept (evidence not destroyed)", pending3.exists())
-    check("pending rc>=8: staged files kept", (work3 / "evidence.txt").exists())
-    check("pending rc>=8: failure marker written",
-          updater.failed_marker_path(work3).exists(),
-          str(updater.failed_marker_path(work3)))
-
-    note = updater.pop_failed_update_note(work3)
-    check("failed note: readable once", bool(note))
-    check("failed note: marker deleted after read",
-          not updater.failed_marker_path(work3).exists())
-
-    # C4【顺序缺陷回归，2026-09-19】marker 删不掉时**不得吞掉提示**。
-    # 旧写法把 unlink 和 read_text 放同一个 try：unlink 抛 OSError（文件被
-    # Defender/索引器瞬时锁住，本仓库实测过）就走 except 直接 return ""——
-    # detail 明明读到了，用户却看不到升级失败提示。真实注入：独占锁住 marker。
-    work4 = _root_c / "update4"; work4.mkdir()
-    marker4 = updater.failed_marker_path(work4)
-    marker4.write_text("install rc=16", encoding="utf-8")
-    _h = _lock_no_delete(marker4)          # 能读、不能删
-    try:
-        note4 = updater.pop_failed_update_note(work4)
-    finally:
-        _unlock(_h)
-    check("locked marker: note still returned (delete failure must not eat the note)",
-          bool(note4) and "install rc=16" in note4, repr(note4))
-    check("locked marker: evidence kept for the next launch", marker4.exists())
-    marker4.unlink()                        # 解锁后清掉，避免影响后续断言
-finally:
-    _clean(_root_c)
 
 
 # ==================== D. launch_pending_cmd：无控制台 + 脱离父进程 ====================
@@ -473,11 +374,11 @@ try:
             seen["args"] = args
             seen["kwargs"] = kwargs
 
-    updater.subprocess.Popen = _FakePopen
+    U.subprocess.Popen = _FakePopen
     try:
-        launched = updater.launch_pending_cmd(str(_root_d / "fake.bat"))
+        launched = U.launch_pending_cmd(str(_root_d / "fake.bat"))
     finally:
-        updater.subprocess.Popen = _real_popen
+        U.subprocess.Popen = _real_popen
     flags = seen.get("kwargs", {}).get("creationflags", 0)
     check("launch: Popen used (list argv, no shell)", seen.get("args", [None])[0] == "cmd.exe",
           repr(seen.get("args")))
@@ -493,98 +394,78 @@ try:
     script.write_text('@echo off\r\necho ok > "%~dp0ran.txt"\r\n',
                       encoding="ascii", newline="")
     check("launch: real start returned True",
-          updater.launch_pending_cmd(str(script)) is True)
+          U.launch_pending_cmd(str(script)) is True)
     check("launch: detached script actually ran", _wait_for(marker, 15.0))
-    check("launch: empty cmd returns False", updater.launch_pending_cmd("") is False)
+    check("launch: empty cmd returns False", U.launch_pending_cmd("") is False)
 finally:
     _clean(_root_d)
 
 
-# ==================== E. 成功路径的残留窄口：拷完却没有 exe ====================
-# 真实 robocopy 造不出这条（前置校验要求 stage 里有 exe，拷贝又成功 ⇒ 目标必有 exe），
-# 所以对**渲染出的脚本**做结构断言：必须走 :start_missing（写 marker + 保留现场），
-# 而不是旧的"只记日志，然后 goto cleanup（删 WORK 与 pending）"。
-_root_e = Path(scratch_dir("l-s2t-startmissing-"))
+# ==================== E. 渲染文本的结构面（每处 start 自带守卫 + 分支 start 数） ====================
+# 施工单 §5 第 1 项：两条 `start` 路径的存在性守卫回归。模板 L237/L253 是"每处 start
+# 各自验"，不能靠别处的守卫代证。运行期由 B 组三个场景覆盖"守卫在时不会挂"，这里再钉
+# "守卫本身在文本里存在"——守卫被删掉时，B 组可能因"目标恰好还在"而侥幸通过，只有这条会红。
+_root_e = Path(scratch_dir("l-s2t-guards-"))
 try:
     _failed = _root_e / "update.failed"
-    _text = updater.build_apply_script(
+    _text = U.build_apply_script(
         target_dir=_root_e / "install", stage_dir=_root_e / "stage",
         work_dir=_root_e / "work", backup_dir=_root_e / "backup",
         log_path=_root_e / "update.log", snapshot_dir=_root_e / "snap",
-        failed_marker=_failed, pending_path=_root_e / "pending.json",
-        exe_name="probe.vbs", limit=2)
-    check("script: success path routes a missing exe to :start_missing",
-          "goto start_missing" in _text)
-    check("script: old 'log only then cleanup' shape is gone",
-          "new exe missing - not starting" not in _text)
-    _block = _text.split(":start_missing", 1)[1].split(":cleanup", 1)[0]
-    check("script: :start_missing writes the failure marker",
-          ("> \"%s\"" % _failed) in _block,
-          " | ".join(_block.strip().splitlines()[:2]))
-    check("script: :start_missing keeps the scene (cleanup_keep)",
-          "goto cleanup_keep" in _block)
-
-    # C-26 的结构面：**每一处 `start` 都必须自带存在性守卫**。运行期已由 B 组四个场景
-    # 覆盖"守卫在时不会挂"，这里再钉"守卫本身在文本里存在"——守卫被删掉时，
-    # B 组会因为"目标恰好还在"而侥幸通过，只有这条会红（反之亦然）。
+        failed_marker=_failed, exe_name="probe.vbs", limit=2)
     _newexe = str(_root_e / "install" / "probe.vbs")   # 渲染后 {newexe} 已展开
-    _guard_inline = 'if exist "%s" start "" "%s"' % (_newexe, _newexe)
-    _guard_goto = 'if not exist "%s" goto start_missing' % _newexe
-    check("script: every start is guarded against a missing exe (C-26)",
-          _text.count('start ""') == 2 and _guard_goto in _text and _guard_inline in _text,
-          "sites=%d goto-guard=%s inline-guard=%s"
-          % (_text.count('start ""'), _guard_goto in _text, _guard_inline in _text))
-    # 守卫有两种合法形态：**同一行**的 `if exist … start`，或**紧邻上一行**的
-    # `if not exist … goto <失败标签>`。逐行判，别用"删字符串"——那只认得第一种。
-    _lines = _text.splitlines()
-    _unguarded = []
-    for _i, _l in enumerate(_lines):
-        if 'start ""' not in _l or _guard_inline in _l:
-            continue
-        if _i and _lines[_i - 1].strip() == _guard_goto:
-            continue
-        _unguarded.append(_l.strip())
-    check("script: no unguarded start remains", not _unguarded, " | ".join(_unguarded))
 
-    # 逐分支断言（lead 令，覆盖 :gone / :install_failed / :install_dead / :start_missing）。
-    # ⚠️ 实测我方脚本只有**两处** start（:gone 与 :install_failed）；`:install_dead` 与
-    # `:start_missing` **一处都没有**——不是漏加守卫，而是**根本不启动**，比"守卫住 start"
-    # 更强。所以断言按"每个标签块内的 start 数必须恰好等于设计值"来写：
-    # 任何一块被改坏（多出 start / 少掉 start）都会红，而不是只盯 :start_missing 一处。
-    _LABELS = (":gone", ":stage_invalid", ":install_failed", ":install_dead",
-               ":start_missing", ":giveup")
+    check("script: empty-stage guard precedes any copy (template L223)",
+          'if not exist "%STAGE%\\probe.vbs" goto stage_invalid' in _text)
+    check("script: :stage_invalid brings the previous version back (template >= 1.4.2)",
+          'if exist "%s" start "" "%s"' % (_newexe, _newexe) in _text)
+    check("script: success path routes a missing exe to :install_failed (never bare start)",
+          'if not exist "%s" goto install_failed' % _newexe in _text)
+    check("script: restore path has its own exe guard before start (template L261)",
+          'if not exist "%s" goto install_dead' % _newexe in _text)
+    check("script: fork-only :start_missing is gone with the fork",
+          ":start_missing" not in _text)
+
+    # 逐分支断言（施工单 §5 第 1 项）：每个标签块内的 start 数 = 设计值，且该块的 start
+    # **自带守卫**。模板的守卫形态与 fork 不同（不止"紧邻上一行"）：
+    #   :gone          -> 前几行有 `if not exist "{newexe}" goto install_failed`
+    #   :stage_invalid -> 同一行 `if exist "{newexe}" start "" "{newexe}"`
+    #   :install_failed-> 前几行有 `if not exist "{newexe}" goto install_dead`
+    # 所以判"块内是否有守卫"，不判行距——行距会被中间的 rmdir/move/echo 打散。
+    _LABELS = (":gone", ":stage_invalid", ":install_failed", ":install_dead", ":giveup")
 
     def _label_block(lab):
         s = _text.index(lab + "\n")
         ends = [e for e in (_text.find(o + "\n", s + 1) for o in _LABELS) if e != -1]
         return _text[s:min(ends)] if ends else _text[s:]
 
-    _want = {":gone": 1, ":stage_invalid": 0, ":install_failed": 1,
-             ":install_dead": 0, ":start_missing": 0, ":giveup": 0}
+    _want = {":gone": 1, ":stage_invalid": 1, ":install_failed": 1,
+             ":install_dead": 0, ":giveup": 0}
     _mismatch = ["%s start=%d want=%d" % (lab, _label_block(lab).count('start ""'), n)
                  for lab, n in _want.items()
                  if _label_block(lab).count('start ""') != n]
-    check("script: per-branch start count exactly as designed (4 branches + giveup)",
+    check("script: per-branch start count exactly as designed (template 3 starts + giveup)",
           not _mismatch, " | ".join(_mismatch))
 
-    # "不启动"的分支必须**写明**不启动，否则后人只看到"没有 start"，分不清是设计还是漏了。
-    for _lab, _why in ((":install_dead", "RESTORE FAILED"), (":start_missing", "NEW EXE MISSING")):
-        check("script: %s refuses explicitly (not silently)" % _lab,
-              _why in _label_block(_lab),
-              " | ".join(_label_block(_lab).strip().splitlines()[-2:]))
+    _goto_failed = 'if not exist "%s" goto install_failed' % _newexe
+    _goto_dead = 'if not exist "%s" goto install_dead' % _newexe
+    _inline_old = 'if exist "%s" start "" "%s"' % (_newexe, _newexe)
+    check("script: :gone start is guarded (goto install_failed in the same block)",
+          _goto_failed in _label_block(":gone"))
+    check("script: :stage_invalid start is guarded inline",
+          _inline_old in _label_block(":stage_invalid"))
+    check("script: :install_failed start is guarded (goto install_dead in the same block)",
+          _goto_dead in _label_block(":install_failed"))
 
+    # "不启动"的分支必须**写明**不启动，否则后人只看到"没有 start"，分不清是设计还是漏了。
+    check("script: :install_dead refuses explicitly (not silently)",
+          "RESTORE FAILED" in _label_block(":install_dead"))
 finally:
     _clean(_root_e)
-    _clean(_TMP_DATA)
 
-_left = [p for p, gone in _CLEANED if not gone]
-check("temp dirs cleaned up (no %TEMP% leak)", not _left, " | ".join(_left))
 
 # ==================== F. 单元级控制：把"存在但从未走到"的分支跑一遍 ====================
-# 来源：复核员自查（2026-09-19）——他的"写回兜底"分支在 35 次真跑里一次没执行过，
-# 因为每次都是 PermissionError。**分支存在 ≠ 分支被覆盖**。
-# 端到端触发这些分支必须造出 R1 禁止的形态（目标缺失／真挂死），所以改用**单元级控制**：
-# 直接调函数、喂构造好的入参，不跑 bat、不 start、不碰真实目标。
+# 来源：复核员自查（2026-09-19）——分支存在 ≠ 分支被覆盖。
 _c_unit = Path(scratch_dir("l-s2t-unitctrl-"))
 try:
     # F1 只读自证的**兜底分支**：保护未生效（文件可写）时必须 (a) 返回 False (b) 把文件写回。
@@ -597,13 +478,12 @@ try:
           _w.is_file() and "started-old.txt" in _w.read_text(encoding="ascii"),
           "exists=%s" % _w.is_file())
 
-    # F2 同一条自证在**只读**文件上必须返回 True（与真跑里的断言同源，此处独立复验）。
+    # F2 同一条自证在**只读**文件上必须返回 True。
     os.chmod(_w, stat.S_IREAD)
     _ok_r, _det_r = _readonly_selfproof(_w)
     check("unit: self-proof PASSES on a read-only file", _ok_r is True, repr(_det_r))
 
     # F3 超时判定：`_check_no_hang` 的"红灯"路径真跑中从未走到（没有真挂死）。
-    # 用替身换掉全局 check，喂 timed_out=True，断言**它确实报了失败**，再还原。
     _real_check = check
     _recorded = []
     globals()["check"] = lambda name, ok, detail="": _recorded.append((name, ok, detail))
@@ -623,30 +503,89 @@ finally:
     _clean(_c_unit)
 
 # ---------- :giveup 的三个数必须同源：polls / tick / nominal budget ----------
-# 缺陷（2026-09-19，家族正本与四份副本同形）：`budget_s` 传的是**模块常量**
-# `UPDATE_WAIT_BUDGET_S`，而次数传的是 `limit` **实参**。本文件 `_run_bat` 恰恰用
-# `limit=2` 保持等待短——于是**测试一直在渲染** "2 polls x 1000ms (nominal budget 120s)"，
-# 只是从没人断言过这行文本。**自相矛盾的日志比没有日志更坏**：它看着像证据。
-# 口径："日志里的数必须是被测过的数"（与 C-33 的"日志说谎"同族）。
 def _budget_fields(text):
-    import re as _re
-    m = _re.search(r"after %tries% polls x (\d+)ms \(nominal budget (\d+)s", text)
+    m = re.search(r"after %tries% polls x (\d+)ms \(nominal budget (\d+)s", text)
     return (int(m.group(1)), int(m.group(2))) if m else (None, None)
 
 
-_render = lambda lim: updater.build_apply_script(       # noqa: E731
+_render = lambda lim: U.build_apply_script(       # noqa: E731
     target_dir="T", stage_dir="S", work_dir="W", backup_dir="B", log_path="L",
-    snapshot_dir="SN", failed_marker="F", pending_path="P", limit=lim)
-for _lim in (updater.UPDATE_WAIT_LIMIT, 2, 7):
+    snapshot_dir="SN", failed_marker="F", exe_name="probe.vbs", limit=lim)
+for _lim in (U.UPDATE_WAIT_LIMIT, 2, 7):
     _tick, _budget = _budget_fields(_render(_lim))
     check("giveup text: limit=%d renders a consistent budget" % _lim,
           _tick is not None and _budget == _lim * _tick // 1000,
           "polls=%s tick=%s budget=%s expected=%s"
           % (_lim, _tick, _budget, _lim * _tick // 1000))
 check("giveup text: default render still equals UPDATE_WAIT_BUDGET_S",
-      _budget_fields(_render(updater.UPDATE_WAIT_LIMIT))[1] == updater.UPDATE_WAIT_BUDGET_S,
-      "rendered=%s constant=%s" % (_budget_fields(_render(updater.UPDATE_WAIT_LIMIT))[1],
-                                   updater.UPDATE_WAIT_BUDGET_S))
+      _budget_fields(_render(U.UPDATE_WAIT_LIMIT))[1] == U.UPDATE_WAIT_BUDGET_S,
+      "rendered=%s constant=%s" % (_budget_fields(_render(U.UPDATE_WAIT_LIMIT))[1],
+                                   U.UPDATE_WAIT_BUDGET_S))
+
+
+# ==================== G. sweep_stale_update_dirs：两类都清（施工单 §5 第 2/3 项） ====================
+# F11 隔离自证：**先**证明 gettempdir 指向隔离目录，再做清扫断言；否则这个测试会去
+# 扫、甚至删掉用户真实 %TEMP% 里的东西。
+check("sweep: gettempdir is the isolated dir (F11 - this test never touches real %TEMP%)",
+      Path(tempfile.gettempdir()) == Path(_TMP_TEMP),
+      "gettempdir=%s isolated=%s" % (tempfile.gettempdir(), _TMP_TEMP))
+check("sweep: TEMP_PREFIX matches the two artifact classes",
+      U.TEMP_PREFIX == APP_ID + "-update", "TEMP_PREFIX=%s" % U.TEMP_PREFIX)
+
+_root_g = Path(_TMP_TEMP)
+_old = time.time() - 7200.0     # 2h 前 > max_age=3600
+_old_dir = _root_g / (APP_ID + "-update-olddir")
+_old_dir.mkdir()
+(_old_dir / "staged-payload.bin").write_bytes(b"x")
+_old_bat = _root_g / (APP_ID + "-update.bat")          # 中断的替换脚本（文件）
+_old_bat.write_text("@echo off\r\n", encoding="ascii")
+# 对照样本 1：同前缀但**新鲜**（正在进行的更新）——绝不能碰
+_fresh_dir = _root_g / (APP_ID + "-update-fresh")
+_fresh_dir.mkdir()
+_fresh_bat = _root_g / (APP_ID + "-update-new.bat")
+_fresh_bat.write_text("@echo off\r\n", encoding="ascii")
+# 对照样本 2：非本应用前缀——绝不能碰
+_other = _root_g / "some-other-app-update-old"
+_other.mkdir()
+for _p in (_old_dir, _old_bat, _fresh_dir, _fresh_bat, _other):
+    _t = _old if _p in (_old_dir, _old_bat) else time.time()
+    os.utime(_p, (_t, _t))
+
+_removed = U.sweep_stale_update_dirs(max_age=3600.0)
+check("sweep: stale staged DIR removed", not _old_dir.exists())
+check("sweep: stale replacement .bat FILE removed (the >=1.4.4 defect)",
+      not _old_bat.exists())
+check("sweep: fresh same-prefix artifacts kept (an in-flight update is untouched)",
+      _fresh_dir.exists() and _fresh_bat.exists())
+check("sweep: non-matching prefix kept", _other.exists())
+check("sweep: returns the exact count of removed artifacts", _removed == 2,
+      "removed=%s" % _removed)
+# 原位对照（负控）：把 max_age=0 再跑一次，新鲜的两个也必须被清 —— 证明它们不是
+# 因为"匹配不到"而幸存（否则上面那条"kept"是空真）。
+_removed2 = U.sweep_stale_update_dirs(max_age=0.0)
+check("sweep negative control: with max_age=0 the fresh ones ARE removed (not vacuous)",
+      not _fresh_dir.exists() and not _fresh_bat.exists() and _removed2 == 2,
+      "removed2=%s" % _removed2)
+check("sweep negative control: non-matching prefix still kept",
+      _other.exists())
+
+
+# ==================== H. 接线：C-27 MUST-WIRE 三符号（施工单 §5 第 4 项） ====================
+# dsh/ocx 踩过"拷到位但零引用"：机械哈希全绿，README 承诺的 sweep/pop 从未发生。
+_main_src = (Path(__file__).resolve().parents[1] / "src" / "main.py").read_text(
+    encoding="utf-8")
+for _sym in ("sweep_stale_update_dirs", "pop_failed_update_note", "launch_pending_cmd"):
+    check("wiring (C-27): main.py references %s" % _sym,
+          re.search(r"\b%s\b" % re.escape(_sym), _main_src) is not None)
+check("wiring: the fork module is gone (no src/updater.py consumer left)",
+      not (Path(__file__).resolve().parents[1] / "src" / "updater.py").exists())
+
+
+_clean(_TMP_DATA)
+_clean(_TMP_TEMP)
+
+_left = [p for p, gone in _CLEANED if not gone]
+check("temp dirs cleaned up (no %TEMP% leak)", not _left, " | ".join(_left))
 
 print("UPDATE SAFETY TEST " + ("FAILED: " + ",".join(FAILS) if FAILS else "OK"), flush=True)
 sys.exit(1 if FAILS else 0)

@@ -110,7 +110,9 @@ M.Tray = _FakeTray
 M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
 M.hold_exe_delete_guard = _record_guard          # 替身：只记顺序，不真取句柄
-M.process_pending_update = lambda **_kw: None
+# 切模板后启动期不再是 process_pending_update，而是 sweep %TEMP% 残留；打桩还避免
+# 测试真去 glob 用户真实 %TEMP%（F11）。
+M.sweep_stale_update_dirs = lambda *a, **k: None
 M.migrate_autostart = lambda **_kw: None
 
 # 守卫与重复启动提示打桩（理由同 test_startup_path.py）：生产互斥体是内核对象，

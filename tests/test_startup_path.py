@@ -8,7 +8,7 @@
 
   ① `main()` 不因守卫提前返回（= 故障形态不再重现）；
   ② 启动序列真的走到了 `log_kit.log("startup ...")`；
-  ③ `process_pending_update` 与 `migrate_autostart` 都被调用（骨架没被跳过）；
+  ③ `sweep_stale_update_dirs` 与 `migrate_autostart` 都被调用（骨架没被跳过）；
   ④ 日志落在隔离数据区（实例隔离 F11/D12），不碰用户真实 AppData。
 
 ⚠️ 守卫与重复启动提示**在下方被打桩**：本测试测的是"守卫放行之后的启动序列"，
@@ -59,8 +59,6 @@ class _FakeOverlay:
 
 
 class _FakeTray:
-    update_ready = None
-
     def __init__(self, ctrl):
         self.ctrl = ctrl
 
@@ -98,12 +96,14 @@ class _FakeHook:
         pass
 
 
-CALLS = {"pending": 0, "autostart": 0}
+CALLS = {"sweep": 0, "autostart": 0}
 M.Overlay = _FakeOverlay
 M.Tray = _FakeTray
 M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
-M.process_pending_update = lambda **_kw: CALLS.__setitem__("pending", CALLS["pending"] + 1)
+# 切模板后启动期回收不再是"处理落盘 pending"，而是清 %TEMP% 残留（施工单 §3-B）。
+# 打成替身还避免测试真去 glob 用户真实 %TEMP%（F11）。
+M.sweep_stale_update_dirs = lambda *a, **k: CALLS.__setitem__("sweep", CALLS["sweep"] + 1)
 M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
 
 # 本测试只验证"守卫放行后启动序列完整走通"，不验证守卫本身（那是
@@ -120,21 +120,14 @@ M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 # ---------- 真实退出流程：待应用的更新必须在 finally 里被真正拉起 ----------
 # 用真实 launch_pending_cmd（不打断言）：脚本写一个 marker，证明退出收尾确实执行了替换脚本，
 # 且是无控制台/脱离父进程地拉起（旗标断言见 tests/test_update_safety.py D1）。
+# 切模板后状态只有**唯一写入点** `_PUBLISHED`（不再有 Controller.update_cmd_path 副本）⇒
+# 模拟"已下载"必须写模块状态，而不是给 Controller 塞属性。
 _launch_marker = Path(_TMP) / "launched.txt"
 _launch_bat = Path(_TMP) / "fake_apply.bat"
 _launch_bat.write_text('@echo off\r\necho ok > "%~dp0launched.txt"\r\n',
                        encoding="ascii", newline="")
-_RealController = M.Controller
-
-
-class _ControllerWithPending(_RealController):
-    def __init__(self, overlay, engine):
-        super().__init__(overlay, engine)
-        self.update_cmd_path = str(_launch_bat)   # 模拟"已下载、退出时应用"
-        self.quit_apply_update = True
-
-
-M.Controller = _ControllerWithPending
+from modules import update_helper as _UH  # noqa: E402
+_UH._PUBLISHED["pending_cmd"] = str(_launch_bat)   # 模拟"已下载、退出时应用"
 
 rc = M.main()
 
@@ -153,7 +146,7 @@ startup = [line for line in text.splitlines() if "startup" in line]
 check("main() did not short-circuit (guard passed)", rc is None, "rc=%r" % (rc,))
 check("guard passed -> startup logged", bool(startup),
       startup[-1] if startup else "no startup line in %s" % LOG_PATH)
-check("update pending handled", CALLS["pending"] == 1, "calls=%s" % CALLS["pending"])
+check("stale update sweep ran at startup", CALLS["sweep"] == 1, "calls=%s" % CALLS["sweep"])
 check("autostart self-heal called", CALLS["autostart"] == 1, "calls=%s" % CALLS["autostart"])
 check("log stayed inside isolated data dir", _TMP in str(LOG_PATH), str(LOG_PATH))
 

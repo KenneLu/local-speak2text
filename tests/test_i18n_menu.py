@@ -71,9 +71,9 @@ check("unknown attribute still raises AttributeError", _unknown_ok)
 
 # ---------- ③ 菜单签名随语言变化（决定 MenuSignature 是否重画） ----------
 # 用 object.__new__ 绕过 Tray.__init__（不创建 pystray 图标，headless 安全）；
-# _menu_signature 只读 self.update_ready 与模块级状态。
+# 切模板后 _menu_signature 的更新格现取 `update_ready()`（模块唯一写入点），
+# Tray 上不再有 update_ready 副本。
 tray = object.__new__(M.Tray)
-tray.update_ready = None
 
 i18n.init("zh")
 sig_zh = M.Tray._menu_signature(tray)

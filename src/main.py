@@ -28,11 +28,12 @@ from modules import i18n, log_kit, tray_kit   # noqa: E402
 from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
                                ICON_DRAW, VERSION)
 from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
-from modules.paths import (LOG_DIR, RUN_DIR, USER_DATA_DIR,
-                           hold_exe_delete_guard)
-from updater import (check_update, download_update, prepare_update_cmd,
-                     process_pending_update, pop_failed_update_note,
-                     launch_pending_cmd)
+from modules.paths import (INSTALL_DIR, LOG_DIR, RUN_DIR, UPDATE_DIR,
+                           USER_DATA_DIR, hold_exe_delete_guard)
+from modules.update_helper import (check_update, download_and_prepare,
+                                   launch_pending_cmd, pending_cmd,
+                                   pop_failed_update_note,
+                                   sweep_stale_update_dirs, update_ready)
 from keyboard_hook import KeyboardHook
 # ⚠️ `MODEL_DIR` / `MODEL_NAME` 有意**不**在这里 from-import：`from ... import X` 绑的是
 # **导入那一刻的静态副本**，而 `pipeline.load_config()` 之后重绑的是 `pipeline.MODEL_DIR`。
@@ -176,6 +177,18 @@ def save_config_dict(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
+def update_repo():
+    """更新源（`config.json:update_repo`，owner/repo）——运行时可配，空串 = 未配置。
+
+    ⚠️ 必须在**调用侧**拦下"未配置"：模板 `update_helper` 的 `repo=` 缺省会回退到
+    `appconfig` 的 `REPO` 常量（= 出厂默认），直接传空串会把"用户删了 update_repo"
+    静默变成"照常去查出厂默认仓库"，`update_no_repo` 这条用户可见文案将永不出现
+    （施工单 §3-A：三重用户可见支撑之一）。所以空串在此返回，由调用方决定：
+    手动检查报 `update_no_repo`，后台启动检查静默跳过。
+    """
+    return str(load_config_dict().get("update_repo", "") or "").strip()
+
+
 # ---------- 开机自启（T3 autostart；target="stable" = 指向稳定安装位） ----------
 
 # ---------- 托盘图标 ----------
@@ -234,7 +247,8 @@ class Tray:
 
     def __init__(self, controller):
         self.controller = controller
-        self.update_ready = None  # (latest,) 下载就绪前=可更新版本；None=无更新
+        # 更新状态**不在这里存副本**：唯一写入点是 update_helper 的 _PUBLISHED，
+        # 菜单可用性一律现取 `update_ready()`（施工单 §4：消灭"两处状态"）。
         self.status_text = i18n.t("tray_loading") % APP_NAME  # 菜单第①段信息行
         self._stop = threading.Event()
         # E2-09：签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
@@ -259,7 +273,7 @@ class Tray:
             pystray.MenuItem(
                 i18n.t("menu_update_now"),
                 self._apply_update,
-                enabled=lambda item: self.update_ready is not None,
+                enabled=lambda item: update_ready() is not None,
             ),
             pystray.Menu.SEPARATOR,
             # ③ 默认入口（双击托盘）：使用指引
@@ -302,7 +316,7 @@ class Tray:
         """菜单上会"显示出来"的状态；只有它变了才值得重建。"""
         return (
             i18n.current_lang(),
-            self.update_ready is not None,
+            update_ready() is not None,
             bool(load_config_dict().get("auto_gain", True)),
             is_autostart_enabled(),
         )
@@ -374,26 +388,37 @@ class Tray:
 
     def _check_update(self, icon, item):
         def worker():
-            result = check_update(CONFIG_PATH, force=True)
+            repo = update_repo()
+            if not repo:
+                self.controller.ui_q.put(("update_status", i18n.t("update_no_repo")))
+                return
+            # check_update 在**成功路径**上顺带发布 UPDATE_READY（模块唯一写入点），
+            # 这里不再手工同步任何副本。
+            result = check_update(VERSION, force=True, repo=repo)
             if result.get("newer"):
                 self.controller.ui_q.put(("update_found", result["latest"]))
-            elif result.get("error") == "no_repo":
-                self.controller.ui_q.put(("update_status", i18n.t("update_no_repo")))
             elif result.get("error"):
+                # error 已自带 http_error_hint（403/429 配额人话），无需调用方再判。
                 self.controller.ui_q.put(("update_status", i18n.t("update_check_fail") % result["error"]))
             elif result.get("latest"):
                 self.controller.ui_q.put(("update_status", i18n.t("update_latest") % result["latest"]))
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_update(self, icon, item):
-        if not self.update_ready:
+        latest = update_ready()
+        if not latest:
             return
-        latest = self.update_ready
 
         def worker():
+            repo = update_repo()
+            if not repo:
+                self.controller.ui_q.put(("update_status", i18n.t("update_no_repo")))
+                return
             try:
-                staged = download_update(CONFIG_PATH, latest, log=dprint)
-                self.controller.ui_q.put(("update_staged", latest, staged))
+                # 下载 + 校验 + 暂存 + 生成替换脚本（并发布 PENDING_CMD）一次完成。
+                download_and_prepare(latest, INSTALL_DIR, UPDATE_DIR,
+                                     log=dprint, repo=repo)
+                self.controller.ui_q.put(("update_staged", latest))
             except Exception as e:
                 self.controller.ui_q.put(("update_status", i18n.t("update_download_fail") % e))
         threading.Thread(target=worker, daemon=True).start()
@@ -577,7 +602,6 @@ class Controller:
         self.hook_started = False
         self.exit_requested = False
         self.tray = None
-        self.update_cmd_path = None
         self.quit_apply_update = True   # 退出确认框勾选项的最终值（默认沿用既有行为）
         self._bench_running = False
         self._bench_win = None
@@ -730,20 +754,15 @@ class Controller:
             if self.tray is not None:
                 self.tray.refresh()
         elif kind == "update_found":
-            latest = ev[1]
+            # 状态已由 check_update 发布；这里只需重建菜单让"下载并更新"亮起来。
             if self.tray is not None:
-                self.tray.update_ready = latest
                 self.tray.refresh()
-            self.notify(i18n.t("update_new") % (latest, VERSION))
+            self.notify(i18n.t("update_new") % (ev[1], VERSION))
         elif kind == "update_status":
             self.notify(ev[1])
         elif kind == "update_staged":
-            _latest, staged = ev[1], ev[2]
-            try:
-                self.update_cmd_path = prepare_update_cmd(staged)
-                self.notify(i18n.t("update_ready_restart"))
-            except Exception as e:
-                self.notify(i18n.t("update_download_fail") % e)
+            # 替换脚本已在 download_and_prepare 里生成并发布（pending_cmd()）。
+            self.notify(i18n.t("update_ready_restart"))
         elif kind == "help":
             self._show_help_dialog()
         elif kind == "copy_model_prompt":
@@ -1025,7 +1044,12 @@ def main():
     # 守卫放行之后、`Overlay()`/`Tray()` 之前，而不是紧贴 `Overlay()`：这样更新兜底与自启
     # 自愈这两步也落在保护窗口内。失败放行 / dev 态跳过都在被调函数里（D3.2），这里不判返回值。
     hold_exe_delete_guard(log=log)
-    process_pending_update(log=log)
+    # 被中断的更新会在 %TEMP% 留下整包（暂存目录）与替换脚本（文件）——启动时先回收
+    # **一小时前**的（正在进行的不碰）。模板 README 采纳步骤 4：扫残留要在读失败通知之前。
+    # 本仓旧实现的"启动兜底 process_pending_update"已随切模板删除（施工单 §3-B，有意）。
+    swept = sweep_stale_update_dirs()
+    if swept:
+        log("swept %d stale update artifact(s) from %%TEMP%%" % swept)
     migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
     # C-38 启动自证（唯一正本样例，CONFORMANCE §4.1.38）：把**解析后**的数据根 / 配置路径
@@ -1045,7 +1069,8 @@ def main():
     tray.notify(i18n.t("notify_loading"))
 
     # 上次自动更新失败？托盘已退出、失败只能下次启动说（读一次即删）。
-    failed_note = pop_failed_update_note(log=log)
+    # update_dir 必须显式传：模板件没有默认值（施工单 §4）。
+    failed_note = pop_failed_update_note(UPDATE_DIR, log=log)
     if failed_note:
         tray.notify(failed_note, APP_NAME)
 
@@ -1074,10 +1099,15 @@ def main():
         tray.notify(i18n.t("notify_ready") % engine.model_type)
         log("model ready: %s" % engine.model_type)
 
-    # 启动后后台节流检查更新（有配置 update_repo 才生效），有新版弹通知并点亮菜单
+    # 启动后后台节流检查更新（**有配置 update_repo 才生效**），有新版弹通知并点亮菜单。
+    # 未配置时静默跳过：与旧 fork 的 no_repo 早退同义（模板 repo= 缺省会回退出厂仓库，
+    # 故"未配置"必须在调用侧拦下，见 update_repo()）。
     def _startup_update_check():
         time.sleep(8)
-        result = check_update(CONFIG_PATH, force=False)
+        repo = update_repo()
+        if not repo:
+            return
+        result = check_update(VERSION, force=False, repo=repo)
         if result.get("newer"):
             ctrl.ui_q.put(("update_found", result["latest"]))
     threading.Thread(target=_startup_update_check, daemon=True).start()
@@ -1088,12 +1118,14 @@ def main():
     finally:
         log("exit")
         quit_stop.set()
-        if ctrl.update_cmd_path and ctrl.quit_apply_update:
-            # 无控制台、脱离父进程地拉起替换脚本（旧 os.system('start /min') 会闪黑框）
-            if not launch_pending_cmd(ctrl.update_cmd_path, log=log):
-                # 拉不起来不能无声退出：pending 还在，下次启动会重试（update.pending.json），
+        # 状态单一来源：脚本路径由模块的 pending_cmd() 现取（不再在 Controller 里存副本）。
+        if pending_cmd() and ctrl.quit_apply_update:
+            # 无控制台、脱离父进程地拉起替换脚本（旧 os.system('start /min') 会闪黑框）。
+            # 不传 cmd：让 launch_pending_cmd 自己读模块状态（单一写入点）。
+            if not launch_pending_cmd(log=log):
+                # 拉不起来不能无声退出：暂存仍在，下次启动 sweep 会在一小时后回收它；
                 # 但用户此刻应当知道"这次更新没装上"。
-                log("pending update NOT launched; next start will retry")
+                log("pending update NOT launched")
                 try:
                     tray.notify(i18n.t("update_launch_failed"), APP_NAME)
                 except Exception:

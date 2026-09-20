@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """`apply.bat` 的轮询判据必须具备**判别力**：进程在跑 ⇒ 匹配成功；不在 ⇒ 匹配失败。
 
-缺陷形态（`src/updater.py` 的 `_APPLY_BAT`，渲染后）：
+缺陷形态（模板 `modules/update_helper/update_helper.py` 的 `_APPLY_BAT`，渲染后）：
     tasklist /fi "imagename eq {exe}" /nh > "%POLL%" 2>nul
     find /i "{exe}" "%POLL%" >nul
     if errorlevel 1 goto gone
@@ -43,7 +43,10 @@ os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import updater as U  # noqa: E402
+# B5：轮询模板已随 fork `src/updater.py` → 模板 `modules/update_helper/` 一起换源。
+# 模板 bat 的匹配命令是绝对路径 `%SystemRoot%\System32\find.exe /i ... "%POLL%"`——
+# 本测试量的是**判别力**（喂两份 poll 文件，返回码必须不同），不绑命令拼写。
+from modules import update_helper as U  # noqa: E402
 
 FAILS = []
 
@@ -60,7 +63,7 @@ _bat = U.build_apply_script(
     target_dir=str(Path(_TMP) / "t"), stage_dir=str(Path(_TMP) / "s"),
     work_dir=str(Path(_TMP) / "w"), backup_dir=str(Path(_TMP) / "b"),
     log_path=str(Path(_TMP) / "l.log"), snapshot_dir=str(Path(_TMP) / "snap"),
-    failed_marker=str(Path(_TMP) / "f.marker"), pending_path=str(Path(_TMP) / "p.json"),
+    failed_marker=str(Path(_TMP) / "f.marker"),
     exe_name="probe.exe", limit=2)
 
 # ⚠️ 定位**不能**按命令拼写（`find /i`）来找——那会把判据绑死在实现形态上：

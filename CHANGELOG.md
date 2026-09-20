@@ -9,11 +9,36 @@ The tagging convention matches the versions in this file.
 > section and `VERSION` is rolled back to the last released version 1.4.0
 > (STANDARDS G3 item 7: the version number changes only as part of a release).
 
+- **B5：更新链从自家 fork 切到模板件 `modules/update_helper/`（施工单 `UPDATER-SWAP-ls2t.md`）**
+  * **删除 `src/updater.py`**（21 KB 加固 fork）+ `src/modules/update_helper/NOT-WIRED.md`；
+    按模板 1.4.5 拷入 `update_helper.py` / `__init__.py` / `README.md`（逐字节一致，`sync_check` 全 `[ok]`）。
+  * **`main.py` 调用点改写**：`check_update(VERSION, force=…, repo=…)`、
+    `download_and_prepare(latest, INSTALL_DIR, UPDATE_DIR, log=dprint, repo=…)`（下载+暂存+生成脚本二合一）、
+    `pop_failed_update_note(UPDATE_DIR, log=log)`（模板无默认值）、退出收尾 `launch_pending_cmd(log=log)`。
+    更新状态**单一来源**：菜单可用性现取 `update_ready()`、退出拉起现取 `pending_cmd()` ——
+    去掉 `Tray.update_ready` 与 `Controller.update_cmd_path` 两处手工副本（消灭"两处状态"）。
+  * **`update_repo` 运行时可配保住**（施工单 §3-A 裁决）：经模板 1.4.5 新增的 `repo=` 传入；
+    未配置（空串）时在**调用侧**拦下——否则模板缺省会回退出厂仓库，`update_no_repo` 这条
+    用户可见文案将永不出现。`README(.zh-CN).md:59` 的双语承诺、`locales/*.json:82` 文案、
+    `build.bat` 出厂默认值三重支撑不变。
+  * **有意删除**启动兜底 `process_pending_update()`（施工单 §3-B）：模板方案没有启动兜底，
+    中断的更新由 bat `:giveup` + `update.failed` marker + 下次启动 `pop_failed_update_note` 兜，
+    残留由 `sweep_stale_update_dirs` 回收。⇒ `modules/paths.py` 的 `UPDATE_PENDING` **失去消费者**，
+    这是**有意**的（paths README 宣告的三步②③）；`paths.py` 本体删除属**另一条独立级联**，本轮未做。
+  * **新增 `sweep_stale_update_dirs()` 启动回收**：清 `%TEMP%` 里被中断的更新残留（暂存目录 +
+    `local-speak2text-update.bat` 文件，只清一小时前的）。
+  * **切前 4 项验证已补**（`tests/test_update_safety.py`）：① 三条 `start` 路径各自带存在性守卫
+    （逐标签块断言 + 真跑覆盖，含模板新增的 `:stage_invalid` 把旧版拉回）；② `sweep` 两类都清
+    且带"新鲜同前缀/异前缀"对照样本；③ **F11 隔离**——测试把 `tempfile.tempdir` 钉到隔离目录，
+    先自证 `gettempdir()` 再清扫；④ C-27 MUST-WIRE 三符号在 `main.py` 真有引用。
+  * `http_error_hint()` 随模板件接入：403/429 配额人话直接进 `result["error"]`，调用侧不再自行判。
+
 - **#45 同族审计（"判断性探测失败 ⇒ 触发破坏性动作"）：本仓无该类实例，且同仓内正反两个样本齐备**
   （2026-09-19；只读核实 ocx `00978a3` + 本仓审计，**未改任何非本仓文件**）。
   * **问题类**（源于 ocx）：探测自身出错 ⇒ 无条件 `return False` ⇒ 上层据此**杀掉用户正在用的隧道**。
     与家族口径并排刺眼——守卫类要求"自己坏了要**放行**"，那一处是"自己坏了就**拆掉用户的东西**"。
-  * **本仓正面样本** `src/updater.py:437-455`（加固 fork）：
+  * **本仓正面样本** `src/updater.py:437-455`（加固 fork；**该文件已随 B5 整体删除**，
+    此处为审计时点的历史引述）：
     ```
     暂存/目标目录不完整  -> log("keeping for diagnosis")           + return False
     robocopy rc >= 8    -> 写 update.failed marker
