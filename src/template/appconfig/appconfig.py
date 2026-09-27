@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# TEMPLATE-FROM: my-diy-tool-template/modules/appconfig/appconfig.py | TEMPLATE-VER: 1.0.1
+# TEMPLATE-FROM: my-diy-tool-template/template/appconfig/appconfig.py | TEMPLATE-VER: 1.0.1
 """local-speak2text 参数区（T1：拷贝模板后**唯一允许（也需要）修改的文件**）。
 
 工具差异只允许存在于一处（house 标准 D6 / D15）。本文件按设计豁免 sync_check 比对
