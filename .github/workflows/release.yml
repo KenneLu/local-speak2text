@@ -41,10 +41,10 @@ jobs:
           $sv = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2"
           Invoke-WebRequest -Uri $sv -OutFile sv.tar.bz2
           tar -xjf sv.tar.bz2
-          New-Item -ItemType Directory -Force -Path asr-modules/sensevoice-small-int8 | Out-Null
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx asr-modules/sensevoice-small-int8/
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt asr-modules/sensevoice-small-int8/
-          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav asr-modules/test_zh.wav
+          New-Item -ItemType Directory -Force -Path asr-template/sensevoice-small-int8 | Out-Null
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx asr-template/sensevoice-small-int8/
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt asr-template/sensevoice-small-int8/
+          Copy-Item sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/test_wavs/zh.wav asr-template/test_zh.wav
 
       - name: Install dependencies
         run: |
@@ -55,8 +55,8 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $line = Select-String -Path src/modules/appconfig/appconfig.py -Pattern '^VERSION = ' | Select-Object -First 1
-          if (-not $line) { throw "VERSION not found in src/modules/appconfig/appconfig.py" }
+          $line = Select-String -Path src/template/appconfig/appconfig.py -Pattern '^VERSION = ' | Select-Object -First 1
+          if (-not $line) { throw "VERSION not found in src/template/appconfig/appconfig.py" }
           $version = ($line.Line -split '"')[1]
           "version=$version" >> $env:GITHUB_OUTPUT
           "package=local-speak2text-$version" >> $env:GITHUB_OUTPUT
@@ -65,7 +65,7 @@ jobs:
       # build.bat runs the gates, builds, and runs the frozen smoke check.
       # The smoke gate pins LOCAL_SPEAK2TEXT_CONFIG to the release folder's
       # shipped config (model_dir relative to the exe); pipeline's upward
-      # fallback resolves it to the asr-modules/ downloaded above.
+      # fallback resolves it to the asr-template/ downloaded above.
       #
       # The log is teed to build.log and, on failure, its tail is emitted as a
       # `::error::` annotation. Reason (2026-09-20): a failing gate names itself in

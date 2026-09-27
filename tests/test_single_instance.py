@@ -6,7 +6,7 @@
 双击 exe 永远弹"已在运行"，工具完全打不开。--smoke 又绕过了守卫，所以
 冒烟 / 门禁 / review 三层全绿也没拦住。本文件就是补上的那条断言（D3.2）。
 
-守卫实现已收敛到模板 modules/tray_kit（T7）。断言语义一条不丢，且按 SINGLE-08
+守卫实现已收敛到模板 template/tray_kit（T7）。断言语义一条不丢，且按 SINGLE-08
 拆成"命名正确性（不占锁）"与"抢锁/拒绝（测试专属名）"两类，**用户实例在跑时
 也全绿**（R-09）——因为 <APP>_DATA_DIR 只隔离磁盘，隔离不了内核对象：
   ① 命名正确性：纯字符串断言 MUTEX_NAME == 家族派生式，再用 CreateMutexW
@@ -33,7 +33,7 @@ os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from modules import tray_kit  # noqa: E402
+from template import tray_kit  # noqa: E402
 
 FAILS = []
 EXPECTED_NAME = r"Local\%s-single-instance" % M.APP_ID

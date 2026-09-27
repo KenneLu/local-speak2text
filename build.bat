@@ -37,10 +37,10 @@ rem Robust parse: take everything after '=', drop quotes, then keep the FIRST
 rem space-delimited token. A trailing comment on the VERSION line can therefore
 rem never leak into the version string / release path (same fix in the template).
 set VERSION=
-for /f "tokens=2 delims==" %%a in ('%SystemRoot%\System32\findstr.exe /b /c:"VERSION = " src\modules\appconfig\appconfig.py') do set VERSION=%%a
+for /f "tokens=2 delims==" %%a in ('%SystemRoot%\System32\findstr.exe /b /c:"VERSION = " src\template\appconfig\appconfig.py') do set VERSION=%%a
 for /f "tokens=1" %%a in ("%VERSION:"=%") do set VERSION=%%a
 if not defined VERSION (
-  echo [ERROR] Cannot read VERSION from src\modules\appconfig\appconfig.py.
+  echo [ERROR] Cannot read VERSION from src\template\appconfig\appconfig.py.
   if not defined NOPAUSE pause
   exit /b 1
 )
@@ -123,7 +123,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile src/main.py src/pipeline.py src/icons.py src/keyboard_hook.py src/wasapi_probe.py src/modules/i18n/i18n.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py src/modules/autostart/autostart.py src/modules/tray_kit/tray_kit.py src/modules/update_helper/update_helper.py
+"%PY%" -m py_compile src/main.py src/pipeline.py src/icons.py src/keyboard_hook.py src/wasapi_probe.py src/template/i18n/i18n.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py src/template/update_helper/update_helper.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause
@@ -134,7 +134,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 2: i18n coverage - zh/en tables must answer the core keys
 rem ---------------------------------------------------------------------------
 echo [TEST] i18n coverage ...
-"%PY%" -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
+"%PY%" -c "import sys; sys.path.insert(0, 'src'); from template import i18n; i18n.init('zh'); assert i18n.t('menu_quit')=='\u9000\u51fa'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; print('i18n OK')"
 if errorlevel 1 (
   echo [ERROR] i18n check failed.
   if not defined NOPAUSE pause
@@ -341,7 +341,7 @@ rem Packaged config: model_dir sits NEXT TO the exe (the natural layout for an
 rem unpacked zip; the 2GB models folder is never shipped inside the package).
 rem Falls back to defaults when config.json is absent (fresh CI checkout).
 echo [CONFIG] writing packaged config.json ...
-"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':'KenneLu/local-speak2text'}; cfg['model_dir']='asr-modules/sensevoice-small-int8'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
+"%PY%" -c "import json,os; cfg=json.load(open('config.json',encoding='utf-8-sig')) if os.path.exists('config.json') else {'auto_gain':True,'vad_floor':0.005,'segment_padding':0.15,'num_threads':8,'language':'auto','update_repo':'KenneLu/local-speak2text'}; cfg['model_dir']='asr-template/sensevoice-small-int8'; json.dump(cfg,open(r'%RELEASE_DIR%\config.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 if errorlevel 1 (
   echo [ERROR] write config failed.
   if not defined NOPAUSE pause
@@ -370,7 +370,7 @@ if not exist "%RELEASE_DIR%\_internal\%APPNAME%-taskbar.ico" (
 rem ---------------------------------------------------------------------------
 rem Frozen check: the packaged exe must prove itself before shipping.
 rem LOCAL_SPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
-rem (model_dir resolves via the upward fallback to the repo's asr-modules/).
+rem (model_dir resolves via the upward fallback to the repo's asr-template/).
 rem LOCAL_SPEAK2TEXT_DATA_DIR redirects the WHOLE data root into the release
 rem dir (F11/D12 instance isolation): without it the smoke writes its log into
 rem the user's live %LOCALAPPDATA%\local-speak2text\log, i.e. build tooling

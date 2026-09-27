@@ -3,7 +3,7 @@
 
 为什么钉的是「顺序」而不只是「被调用过」
 ----------------------------------------
-模板 `modules/paths/README.md` 采纳步骤第 4 条写的是一个**时序**要求：
+模板 `template/paths/README.md` 采纳步骤第 4 条写的是一个**时序**要求：
     **`main()` 在托盘/窗口创建之前调用 `hold_exe_delete_guard(log=log)`**——
     "顺序不能再往后挪，晚一步就等于那一步的窗口期没有保护"。
 ⇒ 所以"调用过"这个断言**不足以**表达它：一个把调用放在 `Tray(ctrl)` 之后的实现，
@@ -29,7 +29,7 @@ os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from modules.paths import LOG_PATH  # noqa: E402
+from template.paths import LOG_PATH  # noqa: E402
 
 FAILS = []
 

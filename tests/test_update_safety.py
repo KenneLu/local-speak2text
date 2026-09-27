@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""更新链安全语义的真实执行回归（模板 `modules/update_helper` 版）。
+"""更新链安全语义的真实执行回归（模板 `template/update_helper` 版）。
 
-本文件随 **B5**（fork `src/updater.py` → 模板 `modules/update_helper/`，施工单
+本文件随 **B5**（fork `src/updater.py` → 模板 `template/update_helper/`，施工单
 `UPDATER-SWAP-ls2t.md`）整体改写：断言对象从自家 fork 换成**模板件**，并补上施工单
 §5 要求"切前必补"的四项验证：
 
@@ -42,7 +42,7 @@ from _cleanup import clear_readonly, rmtree_cleanup, scratch_dir  # noqa: E402  
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# 实例隔离：必须在 import modules.update_helper（它会 import modules.paths）之前重定向数据根。
+# 实例隔离：必须在 import template.update_helper（它会 import template.paths）之前重定向数据根。
 _TMP_DATA = scratch_dir("l-s2t-upd-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP_DATA
 
@@ -54,8 +54,8 @@ os.environ["TEMP"] = _TMP_TEMP
 os.environ["TMP"] = _TMP_TEMP
 tempfile.tempdir = _TMP_TEMP
 
-from modules import update_helper as U  # noqa: E402
-from modules.appconfig import APP_ID  # noqa: E402
+from template import update_helper as U  # noqa: E402
+from template.appconfig import APP_ID  # noqa: E402
 
 FAILS = []
 _CLEANED = []

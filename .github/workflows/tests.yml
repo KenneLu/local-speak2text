@@ -29,13 +29,13 @@ jobs:
       # Each gate is its own step so a failure names the gate in the UI.
       # The full pipeline selftest needs the ASR model, which is not in the
       # repo (2GB); compile + i18n + icon gates run everywhere, the model
-      # roundtrip runs only where asr-modules/ exists (local machine).
+      # roundtrip runs only where asr-template/ exists (local machine).
       - name: Compile check
         # src/updater.py was DELETED by the B5 template swap (9cf285f) but stayed in this
         # list, so `py_compile` failed on a missing file and this workflow has been red on
         # every push since - unnoticed because only the tag-triggered release workflow was
         # watched. The module that REPLACED it is listed instead.
-        run: python -m py_compile src/main.py src/pipeline.py src/modules/i18n/i18n.py src/icons.py src/modules/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/modules/appconfig/appconfig.py src/modules/paths/paths.py src/modules/log_kit/log_kit.py src/modules/autostart/autostart.py src/modules/tray_kit/tray_kit.py
+        run: python -m py_compile src/main.py src/pipeline.py src/template/i18n/i18n.py src/icons.py src/template/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py
 
       # GATE 2d from build.bat, run here as well. It needs no ASR model, and until now the
       # only thing that ran it was the tag-triggered release workflow - which is exactly why
@@ -67,7 +67,7 @@ jobs:
 
       - name: i18n coverage
         run: |
-          python -c "import sys; sys.path.insert(0, 'src'); from modules import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
+          python -c "import sys; sys.path.insert(0, 'src'); from template import i18n; i18n.init('zh'); assert i18n.t('menu_quit')!='menu_quit'; assert i18n.t('menu_open_logs')=='打开日志目录'; i18n.init('en'); assert i18n.t('menu_quit')=='Quit'; assert i18n.t('menu_open_logs')=='Open log folder'; print('i18n OK')"
 
       - name: Icon generation
         run: python src/icons.py
@@ -75,8 +75,8 @@ jobs:
       - name: Pipeline selftest (only when models are present)
         shell: pwsh
         run: |
-          if (Test-Path "asr-modules/sensevoice-small-int8/model.int8.onnx") {
+          if (Test-Path "asr-template/sensevoice-small-int8/model.int8.onnx") {
             python src/pipeline.py
           } else {
-            Write-Host "asr-modules/ not in CI checkout - skipping ASR roundtrip"
+            Write-Host "asr-template/ not in CI checkout - skipping ASR roundtrip"
           }

@@ -50,7 +50,7 @@ os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from modules.paths import LOG_PATH  # noqa: E402
+from template.paths import LOG_PATH  # noqa: E402
 
 FAILS = []
 

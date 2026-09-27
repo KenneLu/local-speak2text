@@ -13,7 +13,7 @@ os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from modules import i18n  # noqa: E402
+from template import i18n  # noqa: E402
 import main as M  # noqa: E402
 
 for lang in ("zh", "en"):

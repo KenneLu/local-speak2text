@@ -23,8 +23,8 @@ os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(_SRC))
-from modules import autostart as A  # noqa: E402
-from modules.appconfig import APP_NAME  # noqa: E402
+from template import autostart as A  # noqa: E402
+from template.appconfig import APP_NAME  # noqa: E402
 
 # 模板 autostart 的源码态命令行取自 sys.argv[0]（被启动的脚本）。测试进程的
 # argv[0] 是本测试文件；把它指向真实入口 main.py，才能验证「重写成 pythonw +

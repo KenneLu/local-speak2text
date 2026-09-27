@@ -76,7 +76,7 @@ build.bat norun nopause  :: unattended, used by CI
 release.bat          :: tag v<version> and push; CI builds and publishes the zip
 ```
 
-The version lives in `src/modules/appconfig/appconfig.py` (`VERSION`) — the single source of truth for the app, the release folder, and the git tag; pushing a `v*` tag is what publishes a release. Shared mechanism lives in `src/modules/` (template copies: `appconfig`, `paths`, `log_kit`, `i18n`, `autostart`, `tray_kit`); tool-specific code stays in `src/main.py` / `pipeline.py`. `local-speak2text.exe --quit` asks a running instance to exit without going through the confirm dialog. Icons are code-generated (`icons.py`), no art assets. The UI is bilingual (`i18n.py`). See [CHANGELOG.md](CHANGELOG.md).
+The version lives in `src/template/appconfig/appconfig.py` (`VERSION`) — the single source of truth for the app, the release folder, and the git tag; pushing a `v*` tag is what publishes a release. Shared mechanism lives in `src/template/` (template copies: `appconfig`, `paths`, `log_kit`, `i18n`, `autostart`, `tray_kit`); tool-specific code stays in `src/main.py` / `pipeline.py`. `local-speak2text.exe --quit` asks a running instance to exit without going through the confirm dialog. Icons are code-generated (`icons.py`), no art assets. The UI is bilingual (`i18n.py`). See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

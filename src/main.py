@@ -24,13 +24,13 @@ from tkinter import filedialog, font as tkfont, messagebox
 
 import pystray
 
-from modules import i18n, log_kit, tray_kit   # noqa: E402
-from modules.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
+from template import i18n, log_kit, tray_kit   # noqa: E402
+from template.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
                                ICON_DRAW, VERSION)
-from modules.autostart import is_autostart_enabled, migrate_autostart, set_autostart
-from modules.paths import (INSTALL_DIR, LOG_DIR, RUN_DIR, UPDATE_DIR,
+from template.autostart import is_autostart_enabled, migrate_autostart, set_autostart
+from template.paths import (INSTALL_DIR, LOG_DIR, RUN_DIR, UPDATE_DIR,
                            USER_DATA_DIR, hold_exe_delete_guard)
-from modules.update_helper import (check_update, download_and_prepare,
+from template.update_helper import (check_update, download_and_prepare,
                                    launch_pending_cmd, pending_cmd,
                                    pop_failed_update_note,
                                    sweep_stale_update_dirs, update_ready)
@@ -111,7 +111,7 @@ def crash_log(text):
     --noconsole 打包后 stderr 不存在，没有这个文件闪退就无迹可寻。
     """
     try:
-        from modules.paths import USER_DATA_DIR
+        from template.paths import USER_DATA_DIR
 
         USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(USER_DATA_DIR / "crash.log", "a", encoding="utf-8") as f:

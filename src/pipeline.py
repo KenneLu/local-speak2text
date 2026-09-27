@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import sherpa_onnx
 
-from modules.paths import APP_DIR, CONFIG_PATH as _USER_CONFIG_PATH, seed_config
+from template.paths import APP_DIR, CONFIG_PATH as _USER_CONFIG_PATH, seed_config
 
 SAMPLE_RATE = 16000
 NUM_THREADS = 8                # ONNX 解码线程数（config.json 可覆盖；实测本机 8 最优）
@@ -334,7 +334,7 @@ def run_benchmark(models_dir, progress=lambda kind, name: None):
 def perf_log(msg):
     """轻量性能日志：追加到用户数据目录 local-speak2text.log，失败静默。"""
     try:
-        from modules.paths import LOG_DIR
+        from template.paths import LOG_DIR
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         with open(LOG_DIR / "local-speak2text.log", "a", encoding="utf-8") as f:
@@ -740,7 +740,7 @@ def _similarity(actual, reference):
     """两个字符串的**字符级重合率**（0..1）：`difflib` 的最长匹配块占比。
 
     为什么不用"命中词数"：词表判据**只在输入被钉住时才成立**，而本门禁的测试 wav
-    并非仓库资产（本地 `asr-modules/` 与 CI 下载的是两句不同的话，见 `selftest` 里的长注释）。
+    并非仓库资产（本地 `asr-template/` 与 CI 下载的是两句不同的话，见 `selftest` 里的长注释）。
     重合率对"同一句话 + ASR 少量波动"给高分（>=0.9），对"另一句话/乱码"给低分（<0.4），
     既保留"识别出乱码必须红"的判别力，又不把判据绑死在某一份 wav 上。
 
@@ -841,7 +841,7 @@ def selftest(wav_path):
     # 结果断言（2026-09-19 补）：旧写法只断言 wav 格式，识别出乱码也照样绿。
     #
     # ⚠ 2026-09-20 修（CI 连红三轮的真凶，v1.4.1/.2/.3 都卡在这里）：
-    # **本门禁的"期望文本"依赖一个仓库没有钉住的输入** —— 测试 wav 是本地 `asr-modules/`
+    # **本门禁的"期望文本"依赖一个仓库没有钉住的输入** —— 测试 wav 是本地 `asr-template/`
     # 里放的那一份，而 CI 的 release.yml 下载的是 **sensevoice 那个 release 自带的
     # `test_wavs/zh.wav`**，两份**根本不是同一句话**。实测：
     #   * 本机 wav（paraformer 那句）→「欢迎大家来体验达摩院推出的语音识别模型」
@@ -856,7 +856,7 @@ def selftest(wav_path):
     if not committed.strip():
         raise RuntimeError("自检失败：定稿文本为空（模型加载成功但没有任何输出）")
     _REFS = (
-        "欢迎大家来体验达摩院推出的语音识别模型",   # 本机 asr-modules/ 的 test_zh.wav
+        "欢迎大家来体验达摩院推出的语音识别模型",   # 本机 asr-template/ 的 test_zh.wav
         "开饭时间早上9点至下午5点",                 # CI 下载的 sensevoice release test_wavs/zh.wav
     )
     _ratios = [(_ref, _similarity(committed, _ref)) for _ref in _REFS]

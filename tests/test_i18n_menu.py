@@ -26,7 +26,7 @@ os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from modules import i18n  # noqa: E402
+from template import i18n  # noqa: E402
 
 FAILS = []
 

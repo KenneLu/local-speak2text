@@ -32,7 +32,7 @@ os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
-from modules.paths import LOG_PATH  # noqa: E402
+from template.paths import LOG_PATH  # noqa: E402
 
 FAILS = []
 
@@ -126,7 +126,7 @@ _launch_marker = Path(_TMP) / "launched.txt"
 _launch_bat = Path(_TMP) / "fake_apply.bat"
 _launch_bat.write_text('@echo off\r\necho ok > "%~dp0launched.txt"\r\n',
                        encoding="ascii", newline="")
-from modules import update_helper as _UH  # noqa: E402
+from template import update_helper as _UH  # noqa: E402
 _UH._PUBLISHED["pending_cmd"] = str(_launch_bat)   # 模拟"已下载、退出时应用"
 
 rc = M.main()

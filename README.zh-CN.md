@@ -76,7 +76,7 @@ build.bat norun nopause  :: 无人值守，CI 用
 release.bat          :: 打 v版本 tag 并推送；CI 构建并发布 zip
 ```
 
-版本号在 `src/modules/appconfig/appconfig.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。共用机制件在 `src/modules/`（模板拷贝：`appconfig`、`paths`、`log_kit`、`i18n`、`autostart`、`tray_kit`），工具自身逻辑留在 `src/main.py` / `pipeline.py`。`local-speak2text.exe --quit` 可让运行中的实例退出（不弹确认框）。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+版本号在 `src/template/appconfig/appconfig.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。共用机制件在 `src/template/`（模板拷贝：`appconfig`、`paths`、`log_kit`、`i18n`、`autostart`、`tray_kit`），工具自身逻辑留在 `src/main.py` / `pipeline.py`。`local-speak2text.exe --quit` 可让运行中的实例退出（不弹确认框）。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可
 
