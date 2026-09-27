@@ -11,6 +11,7 @@ release.yml 均从这里解析）。
 """
 APP_ID = "local-speak2text"
 APP_NAME = "LocalSpeak2Text"   # 历史注册表自启键名，改名 = 断链（NAME-05），不得擅动
+AUTOSTART_KEY = APP_NAME
 # 版本号只在"发版"动作里改（STANDARDS G3 第 7 条）；开发期改动挂在 CHANGELOG 的 ## Unreleased。
 # 铁律：下面这行除空白外不得有任何行尾内容——build.bat / CI 用 for/f 解析它，
 # 行尾追加注释会被 tokens=2,* 当成版本号一起吞掉，制造垃圾 release 路径。
