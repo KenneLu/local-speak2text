@@ -196,48 +196,7 @@ def update_repo():
 from template.tray_icons import tray_icons
 
 
-GUI_INMENUMODE = 0x00000004
-
-
-def menu_is_open():
-    """系统弹出菜单是否正开着（E2-09）。
-
-    菜单开着时重建菜单会把菜单销毁重造（pystray 的 update_menu 是
-    DestroyMenu+CreatePopupMenu），表现就是"鼠标滑着滑着突然失焦"——所以先问一句。
-    探测：菜单模态标记 GUI_INMENUMODE 挂在调用 TrackPopupMenu 的那个线程上，
-    遍历本进程线程去问；再以"前台窗口是系统菜单类 #32768"兜底。探测失败当没开着。
-    """
-    if os.name != "nt":
-        return False
-    try:
-        from ctypes import wintypes
-
-        class GUITHREADINFO(ctypes.Structure):
-            _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
-                        ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
-                        ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
-                        ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
-                        ("rcCaret", wintypes.RECT)]
-
-        for thread in threading.enumerate():
-            tid = getattr(thread, "native_id", None)
-            if not tid:
-                continue
-            info = GUITHREADINFO()
-            info.cbSize = ctypes.sizeof(GUITHREADINFO)
-            if not user32.GetGUIThreadInfo(int(tid), ctypes.byref(info)):
-                continue
-            if info.flags & GUI_INMENUMODE:
-                return True
-        hwnd = user32.GetForegroundWindow()
-        if hwnd:
-            name = ctypes.create_unicode_buffer(32)
-            user32.GetClassNameW(hwnd, name, 32)
-            if name.value == "#32768":
-                return True
-        return False
-    except Exception:   # 探测失败就当没开着
-        return False
+# menu_is_open 探测器已随 tray_kit 2.3.0 下沉模板（W7 Decision 9），此处不再内联。
 
 
 class Tray:
@@ -251,7 +210,7 @@ class Tray:
         self._stop = threading.Event()
         # E2-09：签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
         self._menu_sig = tray_kit.MenuSignature(
-            self.rebuild, menu_is_open=menu_is_open, log=log)
+            self.rebuild, menu_is_open=tray_kit.menu_is_open, log=log)
         tray_icons.init()
         self.icon = pystray.Icon(
             APP_NAME,
