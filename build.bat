@@ -314,7 +314,7 @@ echo [BUILD] PyInstaller onedir noconsole ...
   --add-data "%CD%\%APPNAME%.ico;." ^
   --add-data "%CD%\%APPNAME%-taskbar.ico;." ^
   --add-data "%CD%\locales;locales" ^
-  --add-data "%CD%esources;resources" ^
+  --add-data "%CD%\resources;resources" ^
   --hidden-import pyperclip ^
   --hidden-import pystray ^
   --hidden-import PIL.ImageDraw ^
