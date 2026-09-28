@@ -191,11 +191,9 @@ def update_repo():
 
 # ---------- 开机自启（T3 autostart；target="stable" = 指向稳定安装位） ----------
 
-# ---------- 托盘图标 ----------
+# ---------- 托盘图标（W6 静态贴图：运行时零绘制，tray_icons 按档加载） ----------
 
-def make_icon_image(fill=COLOR_IDLE, size=64):
-    """托盘图标：图形唯一来源是 appconfig.ICON_DRAW（与构建期 ico 同一套设计）。"""
-    return ICON_DRAW(size, fill=fill)
+from template.tray_icons import tray_icons
 
 
 GUI_INMENUMODE = 0x00000004
@@ -254,12 +252,14 @@ class Tray:
         # E2-09：签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
         self._menu_sig = tray_kit.MenuSignature(
             self.rebuild, menu_is_open=menu_is_open, log=log)
+        tray_icons.init()
         self.icon = pystray.Icon(
             APP_NAME,
-            make_icon_image(),
+            tray_icons.get("idle"),
             i18n.t("tray_loading") % APP_NAME,
             self._build_menu(),
         )
+        tray_icons.bind(self.icon, "idle")
 
     def _build_menu(self):
         """house 标准八段式（执行文档 D14）：信息 → 更新 → 默认入口 → 业务 → 打开 → 偏好 → 退出。"""
@@ -360,7 +360,7 @@ class Tray:
 
     def set_recording(self, recording):
         try:
-            self.icon.icon = make_icon_image(COLOR_RECORDING if recording else COLOR_IDLE)
+            tray_icons.set_state("recording" if recording else "idle")
             self.icon.title = (
                 i18n.t("tray_recording") % APP_NAME if recording else i18n.t("tray_idle") % APP_NAME
             )

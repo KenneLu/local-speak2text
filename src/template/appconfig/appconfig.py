@@ -29,6 +29,14 @@ COLOR_RECORDING = (240, 140, 20, 255)
 ICON_ASSET = None
 
 
+# W6 状态贴图（T6 状态架构）：idle=蓝（默认）/ recording=橙。绘制器忽略 base 直接按
+# 状态色重画——与旧运行时 make_icon_image(fill=...) 逐帧等价，构建期一次产出。
+ICON_STATE_ARTISTS = {
+    "idle": lambda base: ICON_DRAW(256, fill=COLOR_IDLE),
+    "recording": lambda base: ICON_DRAW(256, fill=COLOR_RECORDING),
+}
+
+
 def ICON_DRAW(size, fill=COLOR_IDLE):
     """在 size×size 画布上画麦克风（与运行时托盘图标同一设计语言）。
 
