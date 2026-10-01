@@ -141,6 +141,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem sync_check gate: the template repo only exists on dev machines (CI checks
+rem out a single repo) - skipped there, local builds keep it ON (C-18, W8-C).
+rem Family rule: every build.bat must gate on template drift (D1-05/D3-02).
+if not exist "..\my-diy-tool-template\sync_check.py" goto :sync_skip
+echo [GATE] template sync check ...
+"%PY%" ..\my-diy-tool-template\sync_check.py --roots local-speak2text
+if errorlevel 1 goto :sync_fail
+goto :sync_done
+:sync_skip
+echo [SKIP] template sync check: my-diy-tool-template not present (CI single-repo checkout)
+goto :sync_done
+:sync_fail
+echo [ERROR] template drift detected. See my-diy-tool-template/sync_check.py output above.
+if not defined NOPAUSE pause
+exit /b 1
+:sync_done
+
 rem ---------------------------------------------------------------------------
 rem F11/D12 harness pin (2026-09-19): every suite below pins its own data root, but
 rem that is per-file discipline - a NEW test that forgets it gets a green build while
