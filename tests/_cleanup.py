@@ -14,7 +14,7 @@
 用法（在每个建了 `mkdtemp` 的测试末尾）：
     check("temp dir cleaned up (no %TEMP% leak)", rmtree_cleanup(_TMP), str(_TMP))
 
-并加**兜底**（2026-09-19）：末尾那行只在测试跑到底时才执行。测试若是**中途抛异常**
+并加**兜底**：末尾那行只在测试跑到底时才执行。测试若是**中途抛异常**
 （本文件头部记的那次 `TypeError` 崩溃就是活例：一次留 4 个目录），清理行根本轮不到。
 故 `scratch_dir()` 建的根统一登记，`atexit` 兜底回收，且**回收时必须打印证据行**——
 静默兜底等于 `rmtree(..., ignore_errors=True)`，同一个病。
@@ -29,7 +29,7 @@ import tempfile
 import time
 from pathlib import Path
 
-# R2（2026-09-19 lead 裁定）：测试/探针的临时目录一律放 `H:\Tools\_verify-scratch\`，
+# 测试/探针的临时目录一律放 `H:\Tools\_verify-scratch\`，
 # 不得在系统 `%TEMP%` 里留家族前缀的目录。可用 LS2T_SCRATCH_DIR 覆盖（CI 用）。
 _SCRATCH_ENV = "LS2T_SCRATCH_DIR"
 _DEFAULT_SCRATCH = r"H:\Tools\_verify-scratch"
@@ -66,7 +66,7 @@ def _atexit_sweep():
     覆盖范围：异常 / `sys.exit()` / 正常走到结尾。比逐测试 `try/finally` 更宽——
     后者只在有 `try` 包裹时才成立，而本仓测试是**模块级脚本**，没有包裹点。
     两者对"硬崩溃"（native 段错误、被 kill）都无效，`atexit` 不更差。
-    打印而非静默：静默兜底无法与"本来就干净"区分（C-30 的同一课）。
+    打印而非静默：静默兜底无法与"本来就干净"区分（判据·临时目录归属 的同一课）。
     """
     try:
         pending = [p for p in list(_LIVE) if os.path.exists(p)]

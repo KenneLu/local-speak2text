@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""正常启动路径存活（CONFORMANCE SINGLE-04 / D3-01 / R-02）。
+"""正常启动路径存活。
 
 为什么需要这个测试：`--smoke` 在 `main()` 之前分派，**不经过单实例守卫**。
 1.2.0~1.4.0 的守卫因互斥体名非法而恒返回 False，构建冒烟却全绿——
@@ -9,18 +9,18 @@
   ① `main()` 不因守卫提前返回（= 故障形态不再重现）；
   ② 启动序列真的走到了 `log_kit.log("startup ...")`；
   ③ `sweep_stale_update_dirs` 与 `migrate_autostart` 都被调用（骨架没被跳过）；
-  ④ 日志落在隔离数据区（实例隔离 F11/D12），不碰用户真实 AppData。
+  ④ 日志落在隔离数据区（实例隔离），不碰用户真实 AppData。
 
 ⚠️ 守卫与重复启动提示**在下方被打桩**：本测试测的是"守卫放行之后的启动序列"，
 守卫自身行为由 test_single_instance.py 覆盖。生产互斥体是内核对象、不受数据根
-重定向影响（SINGLE-08），不打桩的话——用户托盘实例在跑时真守卫返回 False，
+重定向影响，不打桩的话——用户托盘实例在跑时真守卫返回 False，
 main() 调 warn_duplicate_instance() 弹**模态** MessageBox，测试会永久挂住。
 """
 import os
 import sys
 import tempfile
 from pathlib import Path
-from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：隔离临时目录 + 删前放句柄）
 
 # 实例隔离：必须在 import paths/main 之前重定向数据根与配置
 _TMP = scratch_dir("l-s2t-startup-")
@@ -101,15 +101,15 @@ M.Overlay = _FakeOverlay
 M.Tray = _FakeTray
 M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
-# 切模板后启动期回收不再是"处理落盘 pending"，而是清 %TEMP% 残留（施工单 §3-B）。
-# 打成替身还避免测试真去 glob 用户真实 %TEMP%（F11）。
+# 切模板后启动期回收不再是"处理落盘 pending"，而是清 %TEMP% 残留。
+# 打成替身还避免测试真去 glob 用户真实 %TEMP%。
 M.sweep_stale_update_dirs = lambda *a, **k: CALLS.__setitem__("sweep", CALLS["sweep"] + 1)
 M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
 
 # 本测试只验证"守卫放行后启动序列完整走通"，不验证守卫本身（那是
 # test_single_instance.py 的职责）。因此这里把守卫打桩为"放行"，并把重复启动
 # 提示打成 no-op：
-#   * 生产互斥体是**内核对象**，<APP>_DATA_DIR 隔离不了它（SINGLE-08）——
+#   * 生产互斥体是**内核对象**，<APP>_DATA_DIR 隔离不了它（单实例·内核对象隔离）——
 #     用户的托盘实例在跑时，真守卫会返回 False，main() 随即调
 #     warn_duplicate_instance() → MessageBoxW 是**模态阻塞**对话框，测试会
 #     永久挂住（比失败更糟：CI 挂死而不是变红）。
@@ -119,7 +119,7 @@ M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 
 # ---------- 真实退出流程：待应用的更新必须在 finally 里被真正拉起 ----------
 # 用真实 launch_pending_cmd（不打断言）：脚本写一个 marker，证明退出收尾确实执行了替换脚本，
-# 且是无控制台/脱离父进程地拉起（旗标断言见 tests/test_update_safety.py D1）。
+# 且是无控制台/脱离父进程地拉起（旗标断言见 tests/test_update_safety.py）。
 # 切模板后状态只有**唯一写入点** `_PUBLISHED`（不再有 Controller.update_cmd_path 副本）⇒
 # 模拟"已下载"必须写模块状态，而不是给 Controller 塞属性。
 _launch_marker = Path(_TMP) / "launched.txt"
@@ -150,7 +150,7 @@ check("stale update sweep ran at startup", CALLS["sweep"] == 1, "calls=%s" % CAL
 check("autostart self-heal called", CALLS["autostart"] == 1, "calls=%s" % CALLS["autostart"])
 check("log stayed inside isolated data dir", _TMP in str(LOG_PATH), str(LOG_PATH))
 
-# ---------- C-29：交给模板件的 log 必须是 print 形态 ----------
+# ---------- 判据·log可变参：交给模板件的 log 必须是 print 形态 ----------
 # main.log 被 `log=log` 交给 tray_kit / autostart / update_helper，这些模板件按 print
 # 形态调用（`log("update staged:", staged, "->", target)`）。单参包装在这里会直接
 # TypeError——而且是在**模板件的帧里**抛出，日志里的证据往往被工具侧的 try 吞掉。
@@ -160,7 +160,7 @@ try:
     _c29_err = ""
 except TypeError as exc:
     _c29_err = repr(exc)
-check("log accepts print-style varargs (C-29)", not _c29_err, _c29_err)
+check("log accepts print-style varargs (判据·log可变参)", not _c29_err, _c29_err)
 _text2 = LOG_PATH.read_text(encoding="utf-8", errors="replace") if LOG_PATH.exists() else ""
 check("varargs log actually forwarded (space-joined)", "c29-probe 42" in _text2,
       "log=%s" % LOG_PATH)

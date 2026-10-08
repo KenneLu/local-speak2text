@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""退出路径必须 fail-open：弹窗链路**不可用时仍要退出**（#44-A，与 reme 同形）。
+"""退出路径必须 fail-open：弹窗链路**不可用时仍要退出**（与 reme 同形）。
 
 为什么单独钉住：`Controller._confirm_quit` 的降级链是
     富对话框 → 原生 askyesno → 放行
@@ -15,7 +15,7 @@
 "只放行一次"不是凑数：退出收尾要落盘并拉起替换脚本，放行两次就等于跑两遍；
 而这条链有三个出口（富框 / 原生框 / 末级放行），出口之间若不互斥就会 >1。
 
-**"放行"不等于"执行破坏性动作"**（2026-09-19 lead 裁定，本文件新增两条）：
+**"放行"不等于"执行破坏性动作"**：
 退出时是否**应用已下载的更新**（= 替换安装目录）由 `quit_apply_update` 决定，而它在
 `main()` 的 finally 里被读（`src/main.py:1063`）。因此：
   A' 链路不可用 → `quit_apply_update` 必须为 **False**（用户这次**没被问过**，
@@ -40,9 +40,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （R2 位置 + 删前放句柄）
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （隔离临时目录 + 删前放句柄）
 
-# F11/D12 实例隔离：必须在 import paths/main 之前重定向数据根与配置，
+# 实例隔离：必须在 import paths/main 之前重定向数据根与配置，
 # 否则 _confirm_quit 里的 load_config_dict/save_config_dict 会读写用户真实配置。
 _TMP = scratch_dir("l-s2t-quitfo-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP

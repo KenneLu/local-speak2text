@@ -128,9 +128,9 @@ The tagging convention matches the versions in this file.
 > 而"门禁错了"的证据从第一次 CI 红起就写在 bat 自己的 stderr 里。
 
 ## 1.4.1
-- **The update chain now uses the shared template module** (2026-09-20, task #32/B5). src/updater.py (a 21 KB fork) is deleted; modules/update_helper/ 1.4.5 is adopted byte-for-byte. The template grew the two interfaces this needed: optional repo= on check_update/download_and_prepare (so config.json:update_repo stays runtime-configurable - the README promise, the update_no_repo string and the factory default all depend on it) and optional exe_name= (the stand-in hook the four test call sites need in order to render probe.exe instead of the real exe).
+- **The update chain now uses the shared template module** (2026-09-20, task /B5). src/updater.py (a 21 KB fork) is deleted; modules/update_helper/ 1.4.5 is adopted byte-for-byte. The template grew the two interfaces this needed: optional repo= on check_update/download_and_prepare (so config.json:update_repo stays runtime-configurable - the README promise, the update_no_repo string and the factory default all depend on it) and optional exe_name= (the stand-in hook the four test call sites need in order to render probe.exe instead of the real exe).
 - **The startup fallback process_pending_update is intentionally removed**: an interrupted update is now covered by the apply script's :giveup plus the update.failed marker and pop_failed_update_note, and leftovers by sweep_stale_update_dirs (wired into startup). paths.UPDATE_PENDING loses its consumer; removing it from paths.py is a separate cascade and is not part of this release.
-- **All four pre-swap verifications from the work order now have tests**: both start paths guarded per label, sweep clears both kinds (directories and *.bat) with control samples and a negative control, F11 isolation proved by asserting gettempdir() first, and the three C-27 MUST-WIRE symbols referenced from main.py.
+- **All four pre-swap verifications from the work order now have tests**: both start paths guarded per label, sweep clears both kinds (directories and *.bat) with control samples and a negative control, isolation proved by asserting gettempdir() first, and the three module-wiring-referenced MUST-WIRE symbols referenced from main.py.
 - **VERSION 1.4.0 -> 1.4.1.**
 
 > 1.4.1 was never released: its single-instance root-cause fix is merged into this
@@ -157,11 +157,11 @@ The tagging convention matches the versions in this file.
     `local-speak2text-update.bat` 文件，只清一小时前的）。
   * **切前 4 项验证已补**（`tests/test_update_safety.py`）：① 三条 `start` 路径各自带存在性守卫
     （逐标签块断言 + 真跑覆盖，含模板新增的 `:stage_invalid` 把旧版拉回）；② `sweep` 两类都清
-    且带"新鲜同前缀/异前缀"对照样本；③ **F11 隔离**——测试把 `tempfile.tempdir` 钉到隔离目录，
-    先自证 `gettempdir()` 再清扫；④ C-27 MUST-WIRE 三符号在 `main.py` 真有引用。
+    且带"新鲜同前缀/异前缀"对照样本；③ **隔离**——测试把 `tempfile.tempdir` 钉到隔离目录，
+    先自证 `gettempdir()` 再清扫；④ module-wiring-referenced MUST-WIRE 三符号在 `main.py` 真有引用。
   * `http_error_hint()` 随模板件接入：403/429 配额人话直接进 `result["error"]`，调用侧不再自行判。
 
-- **#45 同族审计（"判断性探测失败 ⇒ 触发破坏性动作"）：本仓无该类实例，且同仓内正反两个样本齐备**
+- **同族审计（"判断性探测失败 ⇒ 触发破坏性动作"）：本仓无该类实例，且同仓内正反两个样本齐备**
   （2026-09-19；只读核实 ocx `00978a3` + 本仓审计，**未改任何非本仓文件**）。
   * **问题类**（源于 ocx）：探测自身出错 ⇒ 无条件 `return False` ⇒ 上层据此**杀掉用户正在用的隧道**。
     与家族口径并排刺眼——守卫类要求"自己坏了要**放行**"，那一处是"自己坏了就**拆掉用户的东西**"。
@@ -187,7 +187,7 @@ The tagging convention matches the versions in this file.
   * **纪律的一般形式（据此提出）**：**判断性探测/校验的失败方向必须与其后续动作的危险性匹配**；
     后续是破坏性动作时，必须区分"**确定为假**"与"**无法判定**"，后者**不得**触发该动作。
 
-- **门禁完整性 · 陈旧 `.pyc` 致假红：机制已复现，且危险样本**不可事后检测**（2026-09-19，源自 #52）
+- **门禁完整性 · 陈旧 `.pyc` 致假红：机制已复现，且危险样本**不可事后检测**（2026-09-19，源自）
   —— 这是本仓**门禁自身**的风险，不是被测代码的缺陷。
   * **复现（正向对照）**：同一秒内把源从 A 改成**等长**的 B：
     ```
@@ -202,8 +202,8 @@ The tagging convention matches the versions in this file.
     那是**仓外临时区，会被清**。⇒ **CHANGELOG 里的复现证据必须"配方自足"**：
     **样本不必保存，按上述三个数（同秒 / 等长 / `1789819937`+`77`）可重建**；
     引用它时**不得依赖"那个路径还在"**。（与"记录载体"一族同源。）
-    ⇒ **"编辑 → 回退"这个动作本身同时满足两条**——正是 #52 所指的"**在真文件里做控制实验**"。
-  * **⚠️ 比 #52 原描述更强的一条**：**危险样本没有任何基于头部的检查能发现**——
+    ⇒ **"编辑 → 回退"这个动作本身同时满足两条**——正是 所指的"**在真文件里做控制实验**"。
+  * **⚠️ 比 原描述更强的一条**：**危险样本没有任何基于头部的检查能发现**——
     判据要发现它必须判定"pyc 与源不一致"，而 pyc 存的失效键就是 `(mtime_sec, size)`，
     危险样本的签名**正是"该键相等"** ⇒ **用该键做的检查对它必然判为新鲜**（我的检查器同样如此）。
     ⇒ **原理上不可事后检测，只能事前避免**（除非改用 hash-based pyc）。**危险的那一例与安全的那一例长得一模一样**
@@ -221,8 +221,8 @@ The tagging convention matches the versions in this file.
        或全程 `python -B` / `PYTHONDONTWRITEBYTECODE=1`。
     ② **门禁**：`build.bat` 跑门禁前**清一次 `__pycache__`**，或给 `"%PY%"` 调用加 `-B`。
 
-- **检查-使用竞态（TOCTOU）同型审计：本仓**形态存在、风险已消**（2026-09-19，源自 #53）
-  —— #53 的产物在 **reme-helper**（`tests/test_update_bat.py` **只在该仓**；本仓无此文件），
+- **检查-使用竞态（TOCTOU）同型审计：本仓**形态存在、风险已消**（2026-09-19，源自）
+  —— 的产物在 **reme-helper**（`tests/test_update_bat.py` **只在该仓**；本仓无此文件），
   该任务被路由到本仓，已回报 lead 请求改派；**本仓未改 reme 任何文件**。
   * **同型形态在本仓存在**（渲染的 bat 模板，`src/updater.py`）：
     ```
@@ -258,13 +258,13 @@ The tagging convention matches the versions in this file.
   * 另外 3 件（`autostart.py` / `autostart/README.md` / `tray_kit.py`）复核为 strip-header 后
     逐字节相等且 CRLF 数一致 ⇒ 无需再动。提交 `4babff9` + `b8928de`。
   * 两个**判据缺口**（已上报，未擅自修）：
-    ① **`C-18` 的详情文案对蓝本说谎**：那条"门禁须含 `sync_check` 步"的要求对
+    ① **`判据·sync在门禁` 的详情文案对蓝本说谎**：那条"门禁须含 `sync_check` 步"的要求对
        `blueprints.txt` 名单内的工具**豁免**，而 `local-speak2text` 就在名单里 ⇒ 本仓门禁
        **从来没有** `sync_check` 步骤（已 grep 全仓 bat/cmd 确认），详情却仍打印
        "门禁含 sync_check 与测试"。⇒ lead 那条"重拷 → `sync_check` 绿 → 模板再动又红"的
        **自重置边不适用于本仓**（适用的是 dsh/ocx 这类非蓝本消费方）。
-    ② **消费方的 `.py` 行尾没有任何机械判据**：`C-31` 是 TEMPLATE_CHECK
-       （`--only C-31 --roots local-speak2text` 对本仓**一行都不输出**），而 `sync_check`
+    ② **消费方的 `.py` 行尾没有任何机械判据**：`判据·正本CRLF` 是 TEMPLATE_CHECK
+       （`--only 判据·正本CRLF --roots local-speak2text` 对本仓**一行都不输出**），而 `sync_check`
        的 `.py` 路径是 `sha256_text`（`splitlines()`）——**把行尾归一化掉**。
        上面两处漂移都是**手工逐字节比**才发现的。这和对 reme `clean` 的批评**同形**：
        **规则写在文档里，检查发生在别处，两者没连起来。**
@@ -279,11 +279,11 @@ The tagging convention matches the versions in this file.
     **未动**：裁定只覆盖派发件，扩面与否等 lead 决定，不擅自扩大改动面。
   * **⚠️ 我自己的三个假漂移（本轮最该记的一条）**：我先前把 `sync_check` / `conformance_check`
     的输出当事实报了三条——`[DIFF] paths/README.md 字节差`、`[lag] paths.py 1.1.3→1.1.4`、
-    `C-27 FAIL（paths 声明必接 hold_exe_delete_guard、工具代码零引用）`。
+    `module-wiring-referenced FAIL（paths 声明必接 hold_exe_delete_guard、工具代码零引用）`。
     **按宣告锚 `2afebbc` 复算，三条全部不成立**（三条都是我自己刚实测的）：
     - `paths/README.md`：我的副本与锚点**逐字节相等**（46 行，sha `2233c6d363a1`）；
     - `paths.py`：锚点**就是 VER 1.1.3**，strip-header 后与我**差 0 行**；
-    - `C-27` 的前提 `<!-- MUST-WIRE: hold_exe_delete_guard -->` 在**锚点的** README 里
+    - `module-wiring-referenced` 的前提 `<!-- MUST-WIRE: hold_exe_delete_guard -->` 在**锚点的** README 里
       **出现 0 次**（模板工作树里 1 次、52 行）。
     机理是同一条：**那两件仪器读的是模板工作树，而工作树里有在飞改动**。那个在飞改动 =
     commit `082aaba`（`paths 1.1.4 + MUST-WIRE`，18:51:39）。**它是 `2afebbc` 的后继、同一条线上
@@ -301,7 +301,7 @@ The tagging convention matches the versions in this file.
     `sync_check` 的输出上——**同一个缺陷，我认得它，还是又犯了一次**。
   * 锚点口径下的真实状态（复算后）：**派发件 0 漂移**；`appconfig.py` 是唯一的 CONTENT-DIFF
     且**设计如此**（`[param]`）；仅剩的真实黄灯是 2 个 `missing-module`（`service_link`、
-    `update_helper`；后者是本仓登记在案的 self-fork，见 #32）——这两个目录在锚点的 `ls-tree`
+    `update_helper`；后者是本仓登记在案的 self-fork，见）——这两个目录在锚点的 `ls-tree`
    里**确实存在**，是**真**的未采纳项，不是假漂移。
   * **三态普查（2026-09-19 实测；口径：`TEMPLATE-FROM` 指到的模板路径取该路径**全部历史 rev**，
     逐个做"剔 `TEMPLATE-` 行后逐字节"）**：13 件派发 `.py` ⇒ **与最新正本一致 12 件 /
@@ -369,7 +369,7 @@ The tagging convention matches the versions in this file.
     >    （git 调用均 `cwd=TEMPLATE`）⇒ 先**参数化模板仓路径**（`--template-dir`）；这同时让 `A≠B` 可测。
     >    **两条实现注意**：临时仓提交用 `git -c user.name=… -c user.email=…`（**不依赖、也不点改全局
     >    config**，否则在没配 user 的机器上失败，且失败信息看着像"工具坏了"）；临时仓落**家族 scratch**
-    >    并清理（目录级产物，别留 `%TEMP%`——那是 R-10 增量门禁盯的东西）。
+    >    并清理（目录级产物，别留 `%TEMP%`——那是 回归·temp残留 增量门禁盯的东西）。
     >    **(b) 独有收益**：仓内可 `git mv` 造出"模板侧改过名/挪过目录"，把 ③ 类那条从**推理**变成
     >    **对照实验**（blob 维跨路径命中 vs 路径维遍历漏）。**另须趁 (b) 在手钉死一个规格**：
     >    **多个候选 rev**（v1 与 v3 内容相同）时判词**指名哪一个**（最新？全部列出？）。
@@ -497,7 +497,7 @@ The tagging convention matches the versions in this file.
     > **⇒ 纪律（lead 2026-09-19）：标记清单不是分叉清单。** "0 处 override" 只等于"0 处**申报**"，
     > **不等于"0 处分叉"**；任何"某仓无分叉"的结论必须另有独立证据（代码比对 / 文档记载）。
     > **修法已落**：给 `src/updater.py` 补上
-    > `# TEMPLATE-LOCAL-OVERRIDE: 本仓加固 fork（#32 切到模板模块后整体删除）` ⇒ 新门从此护得住它。
+    > `# TEMPLATE-LOCAL-OVERRIDE: 本仓加固 fork（切到模板模块后整体删除）` ⇒ 新门从此护得住它。
     > **这与"grep 0 命中只证明这一层事实"是同一条**：grep 能证明"没有这行字"，
     > **证明不了"没有分叉"**。
     ② **`.py` 身份头全量审计**（对应 `sync_check` 的第 4 个盲区：它剔掉 `# TEMPLATE-` 行，
@@ -576,7 +576,7 @@ The tagging convention matches the versions in this file.
       > ⇒ ③ 之所以能活，是因为**被测对象不是容器文件**（是 `paths.py` @ 那个锚）。
       > ⇒ 我原先那条二选一分叉应改**三选一**：
       > ```
-      > 有外部锚 -> **锚定**（记成历史，如 ③） ； 有基线 -> **相对化**（R-10 那招） ； 都没有 -> **去量化/改写成规范句**
+      > 有外部锚 -> **锚定**（记成历史，如 ③） ； 有基线 -> **相对化**（回归·temp残留 那招） ； 都没有 -> **去量化/改写成规范句**
       > ```
       > **⚠️ 而我给"哪句安全"加的那个启发式被判据自己反驳了**：我写过"**只看一句里有没有字面计数**"
       > ——但 `paths.py` 那行**有字面计数**（`lone LF=0`）却**完全安全**。⇒ "字面 vs 占位符"只是**代理量**，
@@ -662,7 +662,7 @@ The tagging convention matches the versions in this file.
       > ⇒ 写成 `width == upper - lower and width > 0` 才同时覆盖两例。
       > **③ 的三分支（比单个特例完整）**：
       > ```
-      > 能不派生的，就别派生          <- R-07 的修法（只印 keys=/values=，不印 2 + 82）：从源头消掉
+      > 能不派生的，就别派生          <- 回归·i18n覆盖 的修法（只印 keys=/values=，不印 2 + 82）：从源头消掉
       > 必须派生的，断言它 == 源读数   <- Ⅰ
       > 算出来的，断言它落在合法域      <- Ⅱ
       > ```
@@ -670,7 +670,7 @@ The tagging convention matches the versions in this file.
       > **④ 我补的一处失效模式（Ⅰ 的暗门）**：**Ⅰ 只在"重算那一路"与"被查那一路"不共享来源时才有效。**
       > 若两边都从同一个手抄常量出发（例如把宽度和端点都手写进同一段散文），Ⅰ 退化为**恒真**。
       > ⇒ Ⅰ 必须**从源读数（端点的原始读数）重算**，而不是从同一批派生常量重算。
-      > 实例两例同形可对照：① R-07 的 `2+82=84≠77`（同一行三个数对不上）；② 夹逼负宽度。
+      > 实例两例同形可对照：① 回归·i18n覆盖 的 `2+82=84≠77`（同一行三个数对不上）；② 夹逼负宽度。
       > **可复用方法（他提的，值钱）**：**一次快照 + 多个仓的 HEAD = 双向夹逼**——任一个 HEAD
       > 已存在 ⇒ **时间下界**；本仓 HEAD 尚未推进到其下一个提交 ⇒ **时间上界**；**两条边界出自
       > 同一次采样，所以是同时刻的**，比"两个不同时刻各取一侧"硬（没有跨时刻自由度）。
@@ -710,7 +710,7 @@ The tagging convention matches the versions in this file.
     > `src/updater.py` 的 21 KB fork，它有 `TEMPLATE-LOCAL-OVERRIDE`；`.md` 永远不会有）。
     > **别拿 `.md` 的无标记当"可能是分叉"的探针**——那会在每个 `.md` 上发假警报。
 
-- **`--lang-audit`（R-07）蓝本脚本的输出标签错 + 同行算术自相矛盾**（2026-09-19，由 helpers-dev
+- **`--lang-audit`（回归·i18n覆盖）蓝本脚本的输出标签错 + 同行算术自相矛盾**（2026-09-19，由 helpers-dev
   在 dsh 发现的同类措辞缺陷反查而得）。原打印：
   `zh table entries: 77 (builtin 2 + locales/zh.json 82)` —— 三处错：
   ① `len(known)` 是**去重后的译文值集**大小，却标成 `entries`；② `2 + 82 = 84 ≠ 77`，**同一行
@@ -772,7 +772,7 @@ The tagging convention matches the versions in this file.
     `updater.py` 4 处是更新链日志 ⇒ **它们本就不该按 UI 文案要求**。
     > **⇒ 更正我先前的一条记录**：我报的"**0 untranslated**"是**关于 `main.py` 一个文件**的，
     > **不是关于本仓的**（我的脚本里 `TARGET = SRC / "main.py"`）。**扫描面一换，0 变 38。**
-    > 这与 R-10 那条"判据答的问题比读者以为的窄"同族：**扫描面是判据的一部分，必须一起声明。**
+    > 这与 回归·temp残留 那条"判据答的问题比读者以为的窄"同族：**扫描面是判据的一部分，必须一起声明。**
   * **隐含约束 + 第三成因（helpers-dev 实测，我复现）**：f-string 在 AST 里是 `JoinedStr`，其字面
     片段**各是一个 `Constant`**，判据逐 `Constant` 比 `node.value not in known` ⇒ 拿**片段**去对
     值集 ⇒ **必红**。⇒ 判据**隐含禁止 CJK f-string**，强制 `t('key') % args`。
@@ -888,7 +888,7 @@ The tagging convention matches the versions in this file.
     **3 = f-string 出现处数，6/7 = AST Constant 数**（3 处 f-string 贡献 5 个片段 + 2 条普通字面量）；
     且**同一份模板文件在不同仓得分不同**（取决于该仓词表里有没有 `取消` 这类值）⇒
     **别写成"四家都红 3 处"**。
-  * **⇒ 结论（已上报，待 lead/tpl-keeper 裁）**：**R-07 现阶段不能挂**——不是判据错，是
+  * **⇒ 结论（已上报，待 lead/tpl-keeper 裁）**：**回归·i18n覆盖 现阶段不能挂**——不是判据错，是
     **扫描面未定**。挂之前必须先**显式声明并论证扫描面**（建议**逐文件白名单**，而非全 `src/`），
     并把**四种**成因**分档输出**；否则门禁会因"设计如此的中文 + 模板自带默认值"恒红，
     随后被白名单加到失效。
@@ -904,7 +904,7 @@ The tagging convention matches the versions in this file.
     `zh table keys=<K> values=<V>`。
 
 - **`AsrEngine`'s `model_dir` default was an import-time snapshot — the engine ignored a
-  config change (#46).** `def __init__(self, model_dir=MODEL_DIR, ...)` evaluates the default
+  config change ().** `def __init__(self, model_dir=MODEL_DIR, ...)` evaluates the default
   **once, at class-definition time**; `load_config()` later rebinds the module global
   `MODEL_DIR`, but the default still held the old string, so `AsrEngine()` loaded the old
   model. The same signature already had the correct idiom one line below
@@ -951,7 +951,7 @@ The tagging convention matches the versions in this file.
     imports `MODEL_NAME` and never uses it, which is a hint that this import list was never
     revisited. **已按 lead 路由修掉，见下一条。**
 
-- **#47 修复：`main` 侧的模型目录改成"取用时现读"，不再持有导入期副本。**
+- **修复：`main` 侧的模型目录改成"取用时现读"，不再持有导入期副本。**
   `from pipeline import MODEL_DIR` 绑的是**导入那一刻的静态副本**，而 `pipeline.load_config()`
   重绑的是 **pipeline 模块里的**那个名字——`main` 这边永远停在旧值。两处用户可见症状都实测到：
   * 托盘「选择模型目录」的**对话框初始目录**是旧的（第二次换目录时尤其明显）；
@@ -965,12 +965,12 @@ The tagging convention matches the versions in this file.
     `FAIL 'model updated' notification names the NEW dir  notify='模型目录已更新: <导入期目录>'`
     → 改完 6/6 全绿。
   * **两条出口都钉**，因为只钉一条时"把某一处改成 `new_engine.model_dir`"这种**局部补丁**
-    也能通过——而其余读点（尤其 `--smoke` 那三处）仍然是旧值。这与 #46 的 B 档是同一手法：
+    也能通过——而其余读点（尤其 `--smoke` 那三处）仍然是旧值。这与 的 B 档是同一手法：
     **防退化解**。
-  * 附带收益（与 #46 合并后才成立）：`--smoke` 里"校验目录存在"与"构造 `AsrEngine()`"
+  * 附带收益（与 合并后才成立）：`--smoke` 里"校验目录存在"与"构造 `AsrEngine()`"
     **曾经可以指向不同目录**（一个读快照、一个读调用时值）；现在校验 / 引擎 / 打印三处**同源**，
     不可能再互相矛盾。
-  * 门禁：新增 **GATE 2g**（在 F11/D12 pin 区间内），按同一套方法给出执行证据——
+  * 门禁：新增 **GATE 2g**（在 /pin 区间内），按同一套方法给出执行证据——
     原字节抽区间实跑，`[TEST] main-side model dir (use-time, not a frozen copy) ...` →
     `MAIN MODEL_DIR TEST OK`，`probe rc = 0`，收尾后 `build/test-data` 不存在。
 
@@ -1023,8 +1023,8 @@ The tagging convention matches the versions in this file.
     ⇒ 结论：**这一类只有 `find` 一处被调，已修；`sort`/`timeout`/`curl`/`tar` 零调用**。
     一行修复即完整，不是"修了四分之一的局部补丁"。
   * **顺带一条"不做"**：`tasklist` / `robocopy` / `powershell` 本机首命中都在 System32，
-    按"只修真缺陷"不动它们（绝对路径化的统一改造是**模板** #49 的事，且本 fork 将被
-    `update_helper` 的稳定安装位模式整体取代——见 #32）。
+    按"只修真缺陷"不动它们（绝对路径化的统一改造是**模板** 的事，且本 fork 将被
+    `update_helper` 的稳定安装位模式整体取代——见）。
   * **先红后绿**（`tests/test_poll_matcher.py`，新增）：喂两份 poll 文件（一份含镜像名、
     一份不含），断言**两条返回码必须不同**。修前**在上下文 A 里** `hit rc=1 miss rc=1`
     （红，无判别力）——**同一份裸名探测脚本在上下文 B 里是 0 / 1（绿）**，这个对照已写进
@@ -1050,7 +1050,7 @@ The tagging convention matches the versions in this file.
   * **门禁**：新增 **GATE 2h**。整 bat 实跑（在副本里，见下）八条测试全绿。
   * **两个我自己的近失，留痕**：① 我第一版把**中文注释写进了那个 bat 模板**——
     `test_update_safety` 当场以 `UnicodeEncodeError: 'ascii' codec` 抓住：**那个模板会被
-    写成 `.bat`，必须保持纯 ASCII**（C-22 的存在理由）。注释已改为英文。② 我的测试第一版
+    写成 `.bat`，必须保持纯 ASCII**（判据·bat字节卫生 的存在理由）。注释已改为英文。② 我的测试第一版
     按**命令拼写**（`find /i`）去定位那一行，修复（换成绝对路径）后**当场红成"找不到命令行"**
     ——正是"判据绑死实现形态"这个坑；已改为按行为定位。
 
@@ -1088,7 +1088,7 @@ The tagging convention matches the versions in this file.
     命中时看见的——`src/main.py:1100` 是 `log = os.path.join(base, "smoke.log")`，`base` =
     **exe 所在目录**。现场证据：`release\local-speak2text-1.4.0\smoke.log`（85 B，18:44），
     内容是 `OK model_dir=H:\Tools\my_diy_tools\local-speak2text\asr-modules\sensevoice-small-int8`。
-    三个问题叠加：① **违反 F11/paths 的"禁止往 APP_DIR 写状态"**（APP_DIR 正是会被整目录替换
+    三个问题叠加：① **违反 /paths 的"禁止往 APP_DIR 写状态"**（APP_DIR 正是会被整目录替换
     的地方）；② 产物/安装目录因此**带一份含构建机绝对路径的文件**（打包发布即轻度路径泄露）；
     ③ `build.bat` 只在它自己那段 `del` 它（:345），**构建流程之外跑的 `--smoke` 会把它留下**
     （本机这次就是这样，正是 lead 让我做验收时跑的那一次）。
@@ -1133,9 +1133,9 @@ The tagging convention matches the versions in this file.
     PyInstaller 可能把构建期绝对路径烘进 exe/`_internal`，**可搬移性未实测** ⇒ 在拿到
     证据之前不采用（"看起来更快"不能换一个未验证的假设）。
 
-- **留痕：为什么 C-33 那次动作是「不跟先前指示」而不是「违反指示」。** 先前的指示是
-  "届时不跟"，它的前提是"形态未定、无需跟"。前提消失了——C-33 已定为 FAIL 级、判据不再带
-  "派发件"限定、且直接命中本仓的 fork——于是**指令随之失效**；并且 C-33 条文里已明文给出改法
+- **留痕：为什么 判据·禁ping节拍 那次动作是「不跟先前指示」而不是「违反指示」。** 先前的指示是
+  "届时不跟"，它的前提是"形态未定、无需跟"。前提消失了——判据·禁ping节拍 已定为 FAIL 级、判据不再带
+  "派发件"限定、且直接命中本仓的 fork——于是**指令随之失效**；并且 判据·禁ping节拍 条文里已明文给出改法
   （`powershell -NoProfile -Command "Start-Sleep -Milliseconds N"` 取代 `ping -n 2 127.0.0.1`），
   照抄即可，没有自创形态。记为通用规则：**指令的前提过期 ⇒ 指令过期**；判断依据是理由，
   不是字面。附带收益：`ping` 节拍实测每拍约 9.0 s（名义 120 s 的预算实际约 18 分钟），
@@ -1144,7 +1144,7 @@ The tagging convention matches the versions in this file.
 
 - **两个新测试已挂进门禁，并证明它们真的被执行**（lead 裁定：不在门禁里的测试会烂掉）。
   `build.bat` 新增 **GATE 2e**（`tests\test_quit_failopen.py`）与 **GATE 2f**
-  （`tests\test_engine_model_dir.py`），并在整个测试段外面加了 **F11/D12 harness pin**：
+  （`tests\test_engine_model_dir.py`），并在整个测试段外面加了 **/harness pin**：
   `set "LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\build\test-data"` 在 GATE 2b 之前、收尾 `rmdir`
   在 GATE 2f 之后。对现有测试是 **no-op**（每个文件都在文件内覆盖该 env），价值在于
   **新测试忘了钉也不再泄漏**——而这正是那 6 个缺陷能存在的土壤。
@@ -1152,7 +1152,7 @@ The tagging convention matches the versions in this file.
     写成探针 bat 实跑，`rc=0`，六条 `[TEST]` 按序打印，两条新测试各自报
     `QUIT FAIL-OPEN TEST OK` / `ENGINE MODEL_DIR TEST OK`；
     收尾行确实执行——跑完 `build/test-data` **不存在**。
-  * `C-22` `[ok]`（3 个 bat/cmd 全 CRLF+ASCII 无 TAB，编辑后自证）；`C-25` `[ok]`
+  * `判据·bat字节卫生` `[ok]`（3 个 bat/cmd 全 CRLF+ASCII 无 TAB，编辑后自证）；`gate-steps-runnable` `[ok]`
     （3 个 bat 的步骤调用都在磁盘上且不在死代码里）——后者正是家族为"门禁步骤静默不执行"
     （reme `build.bat:201` 被 TAB 写坏那次）立的判据。
   * 未能用 `build.bat` 本体跑到那一步：它在第 57 行就因 `release\1.4.0` 已存在而 `exit`
@@ -1177,7 +1177,7 @@ The tagging convention matches the versions in this file.
   早于 17:25:25**，而那份输出既没记时刻、也没读被扫对象的 mtime，因此它**无法区分
   "窗口开着"与"窗口已关"**。**拿一个不可判的读数当可判的证据**，是这条的根因。
   * 通用规则：**任何"扫到 X"的结论都必须附扫描时刻 + 被扫对象 mtime**；缺这两样，
-    它不是证据而是猜测。与另外两条同族：C-30/纪律⑥（"0 hits"与"没东西可命中"必须
+    它不是证据而是猜测。与另外两条同族：判据·临时目录归属/纪律⑥（"0 hits"与"没东西可命中"必须
     可区分）、以及"锚点必须指向该文件最后一次变更"。
   * 本仓已经**操作化**的两处：`tests/_cleanup.py` 的 `scratch_dir()` 把每个 scratch root
     登记进 `SWEPT` + atexit 兜底（清理是**可验证**的，不是"没报错就算干净"）；
@@ -1192,7 +1192,7 @@ The tagging convention matches the versions in this file.
   `... after %tries% polls x 1000ms (nominal budget 120s, lower bound)` —— **2 拍 × 1 秒
   写成 120 秒**。这不是"文案不精确"，是**拼出了一个不可能的组合**；而本文件的
   `_run_bat` 一直用 `limit=2` 保持等待短，也就是说**测试长期在渲染这行自相矛盾的文本，
-  只是从没有人断言过它**（与 C-33"日志说谎"同族：口径是**日志里的数必须是被测过的数**）。
+  只是从没有人断言过它**（与 判据·禁ping节拍"日志说谎"同族：口径是**日志里的数必须是被测过的数**）。
   * 修法：`budget_s=limit * UPDATE_WAIT_TICK_MS // 1000`，与 `limit`、`tick_ms` 同源；
     模块常量保留为**默认那一对**的取值并在注释里写明"不得直接传它渲染"。
   * 两侧实测（同一 `_APPLY_BAT`、同一个 `limit=2`）：
@@ -1257,7 +1257,7 @@ The tagging convention matches the versions in this file.
   notifications switch to English" dead-copy is structurally impossible —
   `LANG in vars(package)` and `LANG in vars(submodule)` are both False. `modules/paths/README.md`
   came along in the same wave (it gained the `process_pending_update` deprecation notice).
-  All four files are `[ok]` in `sync_check` and **C-23 turned green** — that check going
+  All four files are `[ok]` in `sync_check` and **判据·禁global重绑 turned green** — that check going
   from `LANG:27(标量)` to no finding is the mechanical proof this cascade worked.
 - **Registered: `icons` is a build-time script, not an import package — an evaluated,
   accepted difference from the template's package form** (lead ruling; `sync_check`'s
@@ -1288,7 +1288,7 @@ The tagging convention matches the versions in this file.
   coincides with `sync_check`'s `.md` normalization, since `.md` is compared byte-wise while
   `.py` is compared with `# TEMPLATE-*` lines stripped. Mixing the two families of hash is
   exactly how a "verified" claim can be true of the wrong object.) `sync_check` now reports
-  `0 blueprint lag(s)` and `0 doc byte-diff(s)`; C-29 stays `[ok]` (this tool's
+  `0 blueprint lag(s)` and `0 doc byte-diff(s)`; 判据·log可变参 stays `[ok]` (this tool's
   `def log(*parts)` joins its arguments and forwards a single string, so it is correct
   against both 1.0.2's single-arg closure and 1.0.3's print form).
 - **Fixed: the three declaration headers written during this cascade ended in a bare LF
@@ -1296,7 +1296,7 @@ The tagging convention matches the versions in this file.
   with a `\n`, while every dispatched body is CRLF, so
   `src/modules/i18n/__init__.py`, `src/modules/i18n/i18n.py` and
   `src/modules/log_kit/log_kit.py` each ended up **mixed** (1 lone LF, 40/129/79 CRLF). It
-  is precisely the class C-31 exists for, and it is invisible to every existing layer:
+  is precisely the class 判据·正本CRLF exists for, and it is invisible to every existing layer:
   `py_compile` is green, and `sync_check`'s `.py` comparison strips `# TEMPLATE-*` lines —
   i.e. it strips the very line that carries the defect. Caught only by reading the bytes
   back. All three header lines are now CRLF; verified: bare-LF count 0 on both sides for all
@@ -1305,7 +1305,7 @@ The tagging convention matches the versions in this file.
   byte-identical outright). The remaining bare-LF files under `src/` are uniformly LF-only,
   not mixed (`icons.py`, `keyboard_hook.py`, `updater.py`, `wasapi_probe.py`, the exempt
   `appconfig.py`, and `autostart.py`, which is LF in the template too and therefore waits
-  for the C-31 re-copyable wave).
+  for the 判据·正本CRLF re-copyable wave).
 - **The test scratch roots now survive a mid-test crash** (`tests/_cleanup.py`). Cleanup
   was a `check(..., rmtree_cleanup(_TMP))` line at the **end of each module** — so it ran
   only if the test reached the end. This repo already has the live example of the other
@@ -1313,7 +1313,7 @@ The tagging convention matches the versions in this file.
   behind (the whole point of the module is that this class must not be silent).
   `scratch_dir()` now registers every root it creates and an `atexit` backstop sweeps the
   leftovers — **printing `[LEAK-SWEPT] …` rather than cleaning quietly**, since a silent
-  sweep is indistinguishable from "there was nothing to sweep" (same lesson as C-30's
+  sweep is indistinguishable from "there was nothing to sweep" (same lesson as 判据·临时目录归属's
   scan surface) and is morally the `rmtree(..., ignore_errors=True)` this module was
   written to kill. Proven, not asserted: a probe that writes a data root
   (`config.json` + `log/<app>.log`) and then raises prints the evidence line and leaves
@@ -1321,7 +1321,7 @@ The tagging convention matches the versions in this file.
   Chosen over per-test `try/finally` because these tests are **module-level scripts** with
   no wrap point, and `atexit` covers a strict superset in-process (exceptions +
   `SystemExit` + normal exit); neither survives a hard kill, so nothing is given up.
-- **The six remaining tests now pin their data root** (F11/D12, user's red line "the build must
+- **The six remaining tests now pin their data root** (user's red line "the build must
   never affect the service"). `test_autostart_migrate`, `test_bench_core`, `test_bench_ui`,
   `test_help_ui`, `test_overlay_grow` and `test_quit_confirm` imported
   `main`/`modules`/`pipeline` **without** redirecting the data root, so import-time
@@ -1339,12 +1339,12 @@ The tagging convention matches the versions in this file.
     left the resident log's mtime **unchanged** (`1789809414.9633431` before and after) and wrote
     the line under the scratch root instead.
   The four GUI tests and the registry test are re-verified by the build gate, where they already run.
-- **Fixed: the smoke diagnostic texts were outside the word table** (C-20). The two
+- **Fixed: the smoke diagnostic texts were outside the word table** (判据·中文残留). The two
   `RuntimeError` messages in `smoke()` were Chinese literals; they now go through
   `i18n.t("smoke_mutex_invalid")` / `i18n.t("smoke_model_dir_missing")` with both
   locales updated (80 -> 82 entries each).
 - **Fixed: `log` was a single-argument wrapper while every template module calls it
-  print-style** (C-29, template `log_kit` 1.0.3 contract). `tray_kit.MenuSignature`,
+  print-style** (判据·log可变参, template `log_kit` 1.0.3 contract). `tray_kit.MenuSignature`,
   `autostart.migrate_autostart` and the updater all do `log("update staged:", staged,
   "->", target)`, which raised `TypeError` **inside the template module's frame** —
   exactly where the tool-side `try` cannot swallow it. `main.log` is now
@@ -1353,10 +1353,10 @@ The tagging convention matches the versions in this file.
   assertions in `tests/test_startup_path.py` (a two-argument call must not raise, and
   the joined text must actually reach the log file).
 - **`src/modules/appconfig/appconfig.py` now declares its origin**
-  (`# TEMPLATE-FROM: ... | TEMPLATE-VER: 1.0.1`), clearing the last C-19 warning; the
+  (`# TEMPLATE-FROM: ... | TEMPLATE-VER: 1.0.1`), clearing the last 判据·派发头齐 warning; the
   parameter file stays exempt from byte comparison by design.
 - **The update-safety test no longer builds "target file is missing" scenarios** (lead
-  ruling R1/R2/R4, after 15 modal WSH dialog boxes landed on the user's desktop).
+  ruling R1/R2, after 15 modal WSH dialog boxes landed on the user's desktop).
   `start "" "<missing .vbs>"` pops a Windows Script Host modal exactly like `start` on a
   missing `.exe` — same modal, same permanent hang in a detached, console-less script.
   So the fake exe (`install/probe.vbs`) now **always exists**, "was it started" is judged
@@ -1367,7 +1367,7 @@ The tagging convention matches the versions in this file.
   `wscript`/`cscript` processes whose command line references this run's scratch root (never
   by image name — that would kill the user's own scripts). `_stage(install_empty=...)` is gone.
 - **GATE 3 pinned its data root, and now prints *why* it is green** (lead ruling 2026-09-19,
-  F11/D12: the toolchain must not share any on-disk file with a resident instance — the
+  /: the toolchain must not share any on-disk file with a resident instance — the
   user's rule is "what we dread most is the build affecting the service"). `build.bat` sets
   `LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\build\selftest-data` around the selftest and removes it
   after; verified by mtime that the live `%LOCALAPPDATA%\local-speak2text\` was **not**
@@ -1393,7 +1393,7 @@ The tagging convention matches the versions in this file.
     `…\models\sensevoice-small-int8`, which no longer exists, so a running instance only
     finds its model through the upward fallback. That is the fact the `[WARN]` names.
 - **GATE 3 could never go red — fixed with two assertions** (`pipeline.selftest()`), found
-  while measuring timeout margins (template `conformance_check.py` 1.8.0 added C-30 for a
+  while measuring timeout margins (template `conformance_check.py` 1.8.0 added 判据·临时目录归属 for a
   different case; this was the same class — a gate that is always green is
   indistinguishable from no gate):
   * **The wait's return value was discarded.** `finish_ev.wait(timeout=60)` returns `False`
@@ -1441,7 +1441,7 @@ The tagging convention matches the versions in this file.
   into their harness docstring)*. The measured table now lives next to `os.chmod(...)`: blocked
   (`del`/`os.remove`/`rmtree` → `PermissionError`), **not** blocked (`rmdir /s /q <parent>` →
   rc=0; `robocopy /e /purge` → rc=3, content overwritten and the `R` bit cleared), and the
-  positioning (an extra layer on top of R1 + the three `start` guards + the R4 timeout).
+  positioning (an extra layer on top of R1 + the three `start` guards + the timeout).
 - **The fake exe in the update test is now read-only** (lead hardening order): `del <file>`,
   `os.unlink` and Python `shutil.rmtree` can no longer remove it, so no step can quietly
   lose the `start` target. A **self-proof assertion** runs inside the test window (deleting
@@ -1454,7 +1454,7 @@ The tagging convention matches the versions in this file.
   `robocopy /e /purge` are **not** blocked by the read-only bit (measured: rmdir rc=0 and the
   directory is gone; robocopy rc=3, target overwritten, `R` bit cleared). What actually makes
   the modal box impossible stays R1 (stand-in always present) + the three `start` existence
-  guards (pinned by C-26) + the R4 timeout; read-only is one extra layer on top.
+  guards (pinned by start-existence-guard) + the timeout; read-only is one extra layer on top.
 - **Per-branch structural assertions on the rendered apply script** (lead ruling, replacing
   the `attrib +R` idea for this test — the read-only bit has no causal role here because the
   test waits for the marker before cleaning up, so there is no cleanup/`start` race to lose).
@@ -1467,7 +1467,7 @@ The tagging convention matches the versions in this file.
   (`RESTORE FAILED` / `NEW EXE MISSING`), so "no start" can never be confused with "the start
   was forgotten". Before this, only `:start_missing` had an assertion — the other branches
   could have been broken silently.
-- Added the **C-26 structural half** to the same test: the rendered script has exactly two
+- Added the **start-existence-guard structural half** to the same test: the rendered script has exactly two
   `start ""` sites and both must be guarded — one by the inline `if exist … start`, one by the
   immediately preceding `if not exist … goto start_missing`. The runtime scenarios only prove
   "no hang while the guard happens to be there"; this pins that the guard **is** there, and the
@@ -1583,7 +1583,7 @@ The tagging convention matches the versions in this file.
   `APP_ID.upper().replace('-','_')` derivation. The two environment variables
   are therefore `LOCAL_SPEAK2TEXT_CONFIG` / `LOCAL_SPEAK2TEXT_DATA_DIR`
   (previously written without the underscore — a one-off name that is now
-  retired, CONFORMANCE NAME-10).
+  retired, CONFORMANCE 命名·环境变量派生).
 - **Fixed: the exe could not start at all since 1.2.0.** The single-instance
   mutex was named `Local\<app>\SingleInstance`; a named kernel object may not
   contain a second backslash after the `Local\` namespace prefix, so
@@ -1603,7 +1603,7 @@ The tagging convention matches the versions in this file.
   bypasses the guard, which is why this defect survived three months of green
   builds. Both suites are now gates in `build.bat` (GATE 2b).
 - **Instance isolation**: `LOCAL_SPEAK2TEXT_DATA_DIR` redirects the whole
-  data root (F11/D12, template `modules/paths`), so tests and build scripts
+  data root (template `modules/paths`), so tests and build scripts
   no longer share config/log with a running tray instance.
 
 ## 1.4.0

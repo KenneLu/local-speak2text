@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""语言切换后菜单必须重画（CONFORMANCE E4-02；用户实测缺陷的回归）。
+"""语言切换后菜单必须重画（用户实测缺陷的回归）。
 
-背景（2026-09-19 用户报告）：托盘有中英切换、通知也变成了英文，但再次右键菜单
+背景（用户报告）：托盘有中英切换、通知也变成了英文，但再次右键菜单
 仍是中文。根因在模板 i18n 包：`from .i18n import *` 把 `LANG` **拷贝**成静态副本，
 `i18n.init('en')` 只改子模块真值；`_menu_signature()` 从包读到过期值 'zh' →
 签名不变 → `MenuSignature` 判定"无需重建" → 菜单永远停在中文。模板 2.1.1 已把
@@ -18,9 +18,9 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：隔离临时目录 + 删前放句柄）
 
-# 实例隔离（F11/D12）：import main 之前重定向数据根，避免碰到用户真实 AppData。
+# 实例隔离：import main 之前重定向数据根，避免碰到用户真实 AppData。
 _TMP = scratch_dir("l-s2t-i18n-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 

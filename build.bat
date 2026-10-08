@@ -54,16 +54,16 @@ set FROZEN_EXE=%RELEASE_DIR%\%APPNAME%.exe
 
 echo [VERSION] %VERSION%  release: %RELEASE_DIR%
 
-rem G1 RELAXED (2026-09-19, C2): target-dir existence is INFO, not a refusal.
-rem The refusal condition is the running-instance guard below (D1-02); safety comes
-rem from C2 - the live instance holds its own exe (no FILE_SHARE_DELETE), so the
+rem release-layout RELAXED (2026-09-19): target-dir existence is INFO, not a refusal.
+rem The refusal condition is the running-instance guard below (build-run-detect); safety comes
+rem from exe-delete-guard - the live instance holds its own exe (no FILE_SHARE_DELETE), so the
 rem kernel rejects deleting it with winerror 32 rather than emptying it silently.
 rem CLEANLINESS IS NOT RELAXED: the old dir is removed right after that guard, so
 rem the build always assembles from scratch and never reuses a stale file.
 if exist "%RELEASE_DIR%" echo [INFO] %RELEASE_DIR% exists - will be removed and rebuilt from scratch.
 
 rem ---------------------------------------------------------------------------
-rem Running-instance guard (D1-02, refined 2026-09-19): refuse ONLY when the live
+rem Running-instance guard (build-run-detect, refined 2026-09-19): refuse ONLY when the live
 rem instance runs FROM THE TARGET release dir. Building a DIFFERENT version dir is
 rem safe - files differ, the frozen smoke pins _CONFIG/_DATA_DIR and never takes
 rem the mutex. What IS unsafe is deleting/overwriting the dir a live instance runs
@@ -86,11 +86,11 @@ rem unchanged. The previous line relied on that false premise, so RUNNING_DIR
 rem kept its trailing `\` and NEVER matched TARGET_DIR (which comes from
 rem `"%CD%\%RELEASE_DIR%"`, no trailing `\`) => the running-instance guard was
 rem dead, and the `rmdir /s /q` below went first: a live instance's release dir
-rem was HOLLOWED OUT (exe survives via the C2 handle, but `_internal/`,
+rem was HOLLOWED OUT (exe survives via the exe-delete-guard handle, but `_internal/`,
 rem `locales/`, `README.md` were all deleted) before the lock made it fail.
 rem That is exactly the 2026-09-19 incident this guard exists to prevent.
 rem Fix = same idiom as dsh/ocx (substring on the ACTION side; the `:~` ban in
-rem the C-43 criterion applies to `if` CONDITIONS, not to `set`).
+rem the no-tilde-substr-in-if criterion applies to `if` CONDITIONS, not to `set`).
 if defined RUNNING_DIR set "RUNNING_DIR=%RUNNING_DIR:~0,-1%"
 set "TARGET_DIR="
 for %%d in ("%CD%\%RELEASE_DIR%") do set "TARGET_DIR=%%~fd"
@@ -106,7 +106,7 @@ if not defined RUNNING_EXE (
   if not errorlevel 1 echo [WARN] %APPNAME%.exe is running but its path could not be read; target dir not verified.
 )
 
-rem G1 relaxed: remove the existing same-version dir NOW (after the guard) so the
+rem release-layout relaxed: remove the existing same-version dir NOW (after the guard) so the
 rem assembly below starts from zero. A live instance would have been refused above;
 rem any other lock makes rmdir fail loudly right here instead of silently reusing.
 if exist "%RELEASE_DIR%" (
@@ -142,8 +142,8 @@ if errorlevel 1 (
 )
 
 rem sync_check gate: the template repo only exists on dev machines (CI checks
-rem out a single repo) - skipped there, local builds keep it ON (C-18, W8-C).
-rem Family rule: every build.bat must gate on template drift (D1-05/D3-02).
+rem out a single repo) - skipped there, local builds keep it ON.
+rem Family rule: every build.bat must gate on template drift.
 if not exist "..\my-diy-tool-template\sync_check.py" goto :sync_skip
 echo [GATE] template sync check ...
 "%PY%" ..\my-diy-tool-template\sync_check.py --roots local-speak2text
@@ -159,7 +159,7 @@ exit /b 1
 :sync_done
 
 rem ---------------------------------------------------------------------------
-rem F11/D12 harness pin (2026-09-19): every suite below pins its own data root, but
+rem harness pin (2026-09-19): every suite below pins its own data root, but
 rem that is per-file discipline - a NEW test that forgets it gets a green build while
 rem writing the user's live %LOCALAPPDATA% root. reme's build pins once around its
 rem whole test section (scripts/build.bat:22); do the same here so this class of
@@ -269,15 +269,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem GATE 2i: the C-2 delete-guard must be WIRED, and wired EARLY. The mechanical
-rem   check (C-27) only proves the symbol is referenced somewhere; the template
+rem GATE 2i: the exe-delete-guard must be WIRED, and wired EARLY. The mechanical
+rem   check (module-wiring-referenced) only proves the symbol is referenced somewhere; the template
 rem   README's requirement is a TIMING one ("before the tray/window is created -
 rem   the order may not move later"), so a call placed after Tray() would satisfy
 rem   "is referenced" while violating what the README actually asks for. This
 rem   test records the call order and asserts guard < overlay < tray. Proven to
 rem   discriminate: with the call moved after Tray() the ordering assertions go
 rem   red while "called exactly once" stays green; with the call deleted, three go red.
-echo [TEST] C-2 delete-guard wiring (order: guard before window/tray) ...
+echo [TEST] exe-delete-guard wiring (order: guard before window/tray) ...
 "%PY%" tests\test_delete_guard_wired.py
 if errorlevel 1 (
   echo [ERROR] delete-guard wiring test failed.
@@ -291,7 +291,7 @@ if exist "%CD%\build\test-data" rmdir /s /q "%CD%\build\test-data"
 rem ---------------------------------------------------------------------------
 rem GATE 3: pipeline selftest with the default model (real ASR roundtrip)
 rem
-rem F11/D12 pin: the toolchain must not share ANY on-disk file with a resident
+rem pin: the toolchain must not share ANY on-disk file with a resident
 rem instance. Without it the selftest writes into the user's live
 rem %LOCALAPPDATA%\local-speak2text\ (user's rule: the build must never affect
 rem the running service). Same pin as the frozen smoke below.
@@ -390,7 +390,7 @@ rem Frozen check: the packaged exe must prove itself before shipping.
 rem LOCAL_SPEAK2TEXT_CONFIG pins the run to THIS package's shipped config
 rem (model_dir resolves via the upward fallback to the repo's asr-template/).
 rem LOCAL_SPEAK2TEXT_DATA_DIR redirects the WHOLE data root into the release
-rem dir (F11/D12 instance isolation): without it the smoke writes its log into
+rem dir (instance isolation): without it the smoke writes its log into
 rem the user's live %LOCALAPPDATA%\local-speak2text\log, i.e. build tooling
 rem touches the running instance's files. Same as dsh/opencodex-helper.
 rem ---------------------------------------------------------------------------

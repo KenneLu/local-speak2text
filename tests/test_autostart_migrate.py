@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""自启自愈（G4.1-03/05）+ frozen 守卫（autostart 1.2.1）双用例。
+"""自启自愈 + frozen 守卫（autostart 1.2.1）双用例。
 
-**只读纪律（CONFORMANCE D3-03 / B4-04 / C-17）**：这个用例必须动 HKCU\\...\\Run
+**只读纪律**：这个用例必须动 HKCU\\...\\Run
 才能验证自愈，所以它是唯一被允许写注册表的测试——但必须**备份原值并在结束时还原**。
 旧版没有还原，跑一次测试就把用户真实的自启项改成了 `pythonw ... src\\main.py`，
 等于测试静默改坏了用户的开机自启。任何新增的注册表操作用例都必须照此模式写。
 
-**1.2.1 语义适配（2026-09-28 W5 后段）**：migrate_autostart 在非 frozen 运行下
+**1.2.1 语义适配**：migrate_autostart 在非 frozen 运行下
 **只读只记**（dev/测试态的 get_autostart_cmd 是 pythonw+argv[0]，谁跑谁抢写 Run 键
 ——reme 事故实测）。旧测试在 dev 态期望"重写"，1.2.1 起该期望反转为"不动"；
 重写语义改由 frozen 替身用例验证（monkeypatch A.sys，参考 reme test_autostart 手法）。
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
 
-# F11/D12 实例隔离：必须在 import autostart 之前重定向数据根与配置，否则导入期的
+# 实例隔离：必须在 import autostart 之前重定向数据根与配置，否则导入期的
 # seed_config() 会写用户真实的 %LOCALAPPDATA%\local-speak2text\。
 _TMP = scratch_dir("l-s2t-migrate-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP

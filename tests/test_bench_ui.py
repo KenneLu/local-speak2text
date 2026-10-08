@@ -10,7 +10,7 @@ from pathlib import Path
 
 from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
 
-# F11/D12 实例隔离：必须在 import main 之前重定向数据根与配置，否则导入期的
+# 实例隔离：必须在 import main 之前重定向数据根与配置，否则导入期的
 # seed_config() 与基准的 perf_log() 会写用户真实的 %LOCALAPPDATA%\local-speak2text\。
 _TMP = scratch_dir("l-s2t-benchui-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP

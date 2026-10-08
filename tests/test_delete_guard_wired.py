@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""C-2 接线：`hold_exe_delete_guard` 必须在**托盘/窗口创建之前**被调用一次。
+"""exe-delete-guard 接线：`hold_exe_delete_guard` 必须在**托盘/窗口创建之前**被调用一次。
 
 为什么钉的是「顺序」而不只是「被调用过」
 ----------------------------------------
@@ -12,10 +12,10 @@
 
 为什么需要这个测试
 ------------------
-C-27 那条机械判据只能证明"这个符号在工具代码里**被引用**"——**引用不等于在正确的时刻调用**。
+module-wiring-referenced 那条机械判据只能证明"这个符号在工具代码里**被引用**"——**引用不等于在正确的时刻调用**。
 这条接线的价值全在时刻上，所以它需要一条**行为**判据，而不是文本判据。
 
-隔离：不建真窗口、不碰注册表、不加载模型；数据根重定向到临时目录（F11/D12）。
+隔离：不建真窗口、不碰注册表、不加载模型；数据根重定向到临时目录。
 """
 import os
 import sys
@@ -111,7 +111,7 @@ M.AsrEngine = _FakeEngine
 M.KeyboardHook = _FakeHook
 M.hold_exe_delete_guard = _record_guard          # 替身：只记顺序，不真取句柄
 # 切模板后启动期不再是 process_pending_update，而是 sweep %TEMP% 残留；打桩还避免
-# 测试真去 glob 用户真实 %TEMP%（F11）。
+# 测试真去 glob 用户真实 %TEMP%。
 M.sweep_stale_update_dirs = lambda *a, **k: None
 M.migrate_autostart = lambda **_kw: None
 

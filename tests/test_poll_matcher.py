@@ -43,7 +43,7 @@ os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-# B5：轮询模板已随 fork `src/updater.py` → 模板 `template/update_helper/` 一起换源。
+# 轮询模板已随 fork `src/updater.py` → 模板 `template/update_helper/` 一起换源。
 # 模板 bat 的匹配命令是绝对路径 `%SystemRoot%\System32\find.exe /i ... "%POLL%"`——
 # 本测试量的是**判别力**（喂两份 poll 文件，返回码必须不同），不绑命令拼写。
 from template import update_helper as U  # noqa: E402

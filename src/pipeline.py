@@ -62,10 +62,10 @@ NUM_THREADS_CFG = NUM_THREADS  # config.json 可覆盖
 
 
 def _engine_default_model_dir():
-    """`AsrEngine()` 不带参数时，**此刻**会用的模型目录（#46）。
+    """`AsrEngine()` 不带参数时，**此刻**会用的模型目录。
 
     单独提出来，是为了让 `AsrEngine.__init__` 与 `describe_model_resolution()` 共用
-    **同一条取值规则**。两边各写一遍正是 #46 的成因：一边在定义时求值、一边在调用时
+    **同一条取值规则**。两边各写一遍正是这个问题的成因：一边在定义时求值、一边在调用时
     求值，于是"打印出来的目录"和"真正加载的目录"可以长期不一致，而谁也看不出来。
     """
     return MODEL_DIR
@@ -113,7 +113,7 @@ def describe_model_resolution():
 
     三件事必须分开报，因为它们**不保证是同一个路径**——这正是要看见的东西：
       `engine`     `AsrEngine()` 此刻实际会加载的目录（走 `_engine_default_model_dir`，
-                   与 `__init__` 同一条规则）。#46 修复前它是**导入期快照**，与
+                   与 `__init__` 同一条规则）。修复前它是**导入期快照**，与
                    `resolved` 长期可以不一致；现在两者同源，若仍然不等，说明
                    `load_config()` 没在配置改动后重跑过（`MODEL_DIR` 是陈旧的）。
       `configured` 配置文件里 `model_dir` 解析后的路径（相对路径按 `BASE_DIR` 展开）。
@@ -127,7 +127,7 @@ def describe_model_resolution():
     """
     # `engine` = 此刻不带参数构造 `AsrEngine()` 会加载的目录。必须走**与 __init__ 同一条
     # 取值规则**（`_engine_default_model_dir`）——旧写法读默认参数 `signature(...).default`
-    # 是把它当成"引擎实际会加载什么"的代理，而那个默认值恰恰是导入期快照（#46）。
+    # 是把它当成"引擎实际会加载什么"的代理，而那个默认值恰恰是导入期快照。
     engine_dir = str(_engine_default_model_dir())
 
     def _model_dir_of(path):
@@ -350,7 +350,7 @@ class AsrEngine:
         # `model_dir=None` 是 sentinel，不是"用一个默认目录"——真正的取值发生在**调用时**。
         # 旧写法 `model_dir=MODEL_DIR` 的默认参数在**函数定义时**求值一次，即导入期的快照；
         # `load_config()` 之后重绑模块级 MODEL_DIR 对它无效，于是"用户在托盘里换了模型目录、
-        # 引擎却还在加载老模型"（#46，实测见 tests/test_engine_model_dir.py）。
+        # 引擎却还在加载老模型"（实测见 tests/test_engine_model_dir.py）。
         # 紧挨着的 num_threads 本来就是 Sentinel + 体内取值，两者现在同形。
         if model_dir is None:
             model_dir = _engine_default_model_dir()
@@ -748,7 +748,7 @@ def _similarity(actual, reference):
     """
     import difflib
     import re as _re
-    strip = lambda s: _re.sub(r"[\s，。、！？,.!?；;：:\"'“”‘’（）()]", "", s)
+    strip = lambda s: _re.sub(r"[\s，。、！？,.!?；;：:\"'“”‘’()]", "", s)
     a, b = strip(actual or ""), strip(reference or "")
     if not a or not b:
         return 0.0
@@ -779,7 +779,7 @@ def selftest(wav_path):
             elif ev[0] == "commit":
                 print(f"[commit] {ev[2]}")
 
-    # 让"绿灯的原因"可见（lead 裁定 2026-09-19）：模型目录从哪来、是否靠回退。
+    # 让"绿灯的原因"可见：模型目录从哪来、是否靠回退。
     # 不判 FAIL —— 配置陈旧是用户侧状态，不是代码缺陷；最多 OUTPUT + WARN。
     info = describe_model_resolution()
     print("[selftest] engine  模型目录: %s" % info["engine"])
@@ -803,16 +803,16 @@ def selftest(wav_path):
                   "该实例运行时只能靠向上查找回退才找得到模型——请更新那份配置。")
     if os.path.normcase(info["engine"]) != os.path.normcase(info["resolved"]):
         print("[WARN] AsrEngine() 此刻会加载的目录（%s）与解析结果（%s）不是同一个——"
-              "两者已共用同一条取值规则（#46），所以这通常意味着配置改过之后没有重跑 "
+              "两者已共用同一条取值规则，所以这通常意味着配置改过之后没有重跑 "
               "`load_config()`，模块级 MODEL_DIR 是陈旧的。" % (info["engine"], info["resolved"]))
-    # #46 回归探针：把"正确形态"直接钉成构建期可见的事实——默认参数必须是 None sentinel，
+    # 回归探针：把"正确形态"直接钉成构建期可见的事实——默认参数必须是 None sentinel，
     # 一旦有人改回 `model_dir=MODEL_DIR`（导入期快照），这里立刻说出来。
     # 与本节其余条目同级：WARN，不判 FAIL（它说的是代码形态，但构建不该因此停下）。
     from inspect import signature as _sig
     _default = _sig(AsrEngine.__init__).parameters["model_dir"].default
     if _default is not None:
         print("[WARN] AsrEngine 的 model_dir 默认参数又内嵌了目录（%r）——"
-              "那是定义时求值的导入期快照，改配置后引擎不会跟着换目录（#46 回归）。"
+              "那是定义时求值的导入期快照，改配置后引擎不会跟着换目录（回归）。"
               % (_default,))
 
     print("加载模型…")
@@ -829,7 +829,7 @@ def selftest(wav_path):
 
     time.sleep(0.5)
     pipe.finish()
-    # 返回值必须判（2026-09-19 修）：`Event.wait()` 超时返回 False，旧写法把它丢弃，
+    # 返回值必须判：`Event.wait()` 超时返回 False，旧写法把它丢弃，
     # "超时"与"正常完成"在输出上完全一样——这条门禁因此永远不会变红。
     if not finish_ev.wait(timeout=60):
         raise RuntimeError(
@@ -838,9 +838,9 @@ def selftest(wav_path):
     committed = "".join(ev[2] for ev in sink.events if ev[0] == "commit")
     print("=" * 40)
     print("定稿文本:", committed)
-    # 结果断言（2026-09-19 补）：旧写法只断言 wav 格式，识别出乱码也照样绿。
+    # 结果断言：旧写法只断言 wav 格式，识别出乱码也照样绿。
     #
-    # ⚠ 2026-09-20 修（CI 连红三轮的真凶，v1.4.1/.2/.3 都卡在这里）：
+    # ⚠ 本门禁的"期望文本"依赖一个仓库没有钉住的输入：
     # **本门禁的"期望文本"依赖一个仓库没有钉住的输入** —— 测试 wav 是本地 `asr-template/`
     # 里放的那一份，而 CI 的 release.yml 下载的是 **sensevoice 那个 release 自带的
     # `test_wavs/zh.wav`**，两份**根本不是同一句话**。实测：

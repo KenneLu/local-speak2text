@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""#46：`AsrEngine` 的 `model_dir` 默认参数是**导入期快照**，必须在调用时取值。
+"""`AsrEngine` 的 `model_dir` 默认参数是**导入期快照**，必须在调用时取值。
 
 缺陷形态（`src/pipeline.py:337`）：
     def __init__(self, model_dir=MODEL_DIR, num_threads=None, model_type=None):
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
 
-# F11/D12 实例隔离：必须在 import pipeline 之前重定向数据根与配置，
+# 实例隔离：必须在 import pipeline 之前重定向数据根与配置，
 # 否则导入期的 seed_config()/load_config() 会读写用户真实的 %LOCALAPPDATA%。
 _TMP = scratch_dir("l-s2t-engdir-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP

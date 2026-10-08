@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""单实例守卫（CONFORMANCE SINGLE-01 / SINGLE-02 / SINGLE-07 / SINGLE-08，R-09）。
+"""单实例守卫。
 
 回归背景：1.2.0~1.4.0 的互斥体名写成 r"Local\\<app>\\SingleInstance"，含第二个
 反斜杠 → CreateMutexW 恒失败（err=3），而守卫把"创建失败"当成"已有实例"→
 双击 exe 永远弹"已在运行"，工具完全打不开。--smoke 又绕过了守卫，所以
-冒烟 / 门禁 / review 三层全绿也没拦住。本文件就是补上的那条断言（D3.2）。
+冒烟 / 门禁 / review 三层全绿也没拦住。本文件就是补上的那条断言。
 
-守卫实现已收敛到模板 template/tray_kit（T7）。断言语义一条不丢，且按 SINGLE-08
-拆成"命名正确性（不占锁）"与"抢锁/拒绝（测试专属名）"两类，**用户实例在跑时
-也全绿**（R-09）——因为 <APP>_DATA_DIR 只隔离磁盘，隔离不了内核对象：
+守卫实现已收敛到模板 template/tray_kit。断言语义一条不丢，拆成"命名正确性（不占
+锁）"与"抢锁/拒绝（测试专属名）"两类，**用户实例在跑时也全绿**——因为
+<APP>_DATA_DIR 只隔离磁盘，隔离不了内核对象：
   ① 命名正确性：纯字符串断言 MUTEX_NAME == 家族派生式，再用 CreateMutexW
      建+关（不持有）验内核接受——实例在跑时拿到 handle + err=183 同样算接受；
   ② 运行期真名：捕获式替身（记录 CreateMutexW 的 name 实参）证明 tray_kit
@@ -24,9 +24,9 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：R2 位置 + 删前放句柄）
+from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助手：隔离临时目录 + 删前放句柄）
 
-# 实例隔离（F11/D12）：必须在 import paths/main **之前**重定向数据根，
+# 实例隔离：必须在 import paths/main **之前**重定向数据根，
 # 否则守卫的日志会写进用户真实的 %LOCALAPPDATA%。
 _TMP = scratch_dir("l-s2t-test-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
@@ -70,8 +70,8 @@ if h:
 
 # ---------- ①b 非法名（2.2.0 语义：守卫不再碰内核，直接放行并记日志；探针判 False） ----------
 # 旧断言是"内核拒绝 err=3"。2.2.0 起守卫遇到非法名**根本不调 CreateMutexW**：
-# 那是编程错误，用户机器上"打不开"比"少一层保护"严重 ⇒ 放行（失败方向=打开，D3.2）；
-# 把它打红是构建期探针的职责（D3.3）。语义一条不丢，换成下面两条。
+# 那是编程错误，用户机器上"打不开"比"少一层保护"严重 ⇒ 放行（失败方向=打开）；
+# 把它打红是构建期探针的职责。语义一条不丢，换成下面两条。
 ILLEGAL = r"Local\%s\SingleInstance" % M.APP_ID   # 第二个反斜杠：历史根因
 _logged = []
 check("guard fails OPEN on an illegal name",

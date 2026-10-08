@@ -6,7 +6,7 @@ from pathlib import Path
 
 from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402
 
-# F11/D12 实例隔离：必须在 import pipeline 之前重定向数据根与配置——导入期的
+# 实例隔离：必须在 import pipeline 之前重定向数据根与配置——导入期的
 # seed_config() 与 run_benchmark 的 perf_log() 都会落盘，不钉就会写用户真实的
 # %LOCALAPPDATA%\local-speak2text\（用户红线：构建不得影响服务）。
 _TMP = scratch_dir("l-s2t-bench-")

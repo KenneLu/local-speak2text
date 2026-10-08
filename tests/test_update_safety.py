@@ -1,32 +1,30 @@
 # -*- coding: utf-8 -*-
 """更新链安全语义的真实执行回归（模板 `template/update_helper` 版）。
 
-本文件随 **B5**（fork `src/updater.py` → 模板 `template/update_helper/`，施工单
-`UPDATER-SWAP-ls2t.md`）整体改写：断言对象从自家 fork 换成**模板件**，并补上施工单
-§5 要求"切前必补"的四项验证：
+本文件断言对象是**模板件**（本仓旧 fork `src/updater.py` 已随切模板退役），覆盖四项验证：
 
   ① **两条 `start` 路径的存在性守卫回归**（模板 L237/L253 各处 start 各自验）；
   ② **`sweep_stale_update_dirs` 两类都清**（暂存目录 + `*-update.bat` 文件），带对照样本；
-  ③ **F11 实例隔离**：`sweep` 会 glob `%TEMP%`，本测试把 `tempfile.tempdir` 钉到
+  ③ **实例隔离**：`sweep` 会 glob `%TEMP%`，本测试把 `tempfile.tempdir` 钉到
      隔离目录，**绝不扫用户真实临时目录**（先自证隔离，再断言）；
-  ④ **C-27 MUST-WIRE 三符号**在 `main.py` 真有引用（dsh/ocx 踩过"拷到位零引用"）。
+  ④ **module-wiring-referenced MUST-WIRE 三符号**在 `main.py` 真有引用（dsh/ocx 踩过"拷到位零引用"）。
 
 保留的安全断言（语义与模板 README「替换脚本的语义要点」逐条对应）：
   A. sha256 期望值缺失 / 不匹配 → 失败（fail-closed）；
   B. 真跑替换脚本：成功铺新版且轮转备份；失败注入（rc>=8）回铺后启动旧版；
      回铺也失败（`:install_dead`）**什么都不启动**；空暂存包（`:stage_invalid`）
      **不碰安装目录、把旧版拉回来**（模板 1.4.2 起的行为，fork 没有）。
-     ⚠️ 判定口径（2026-09-20 对齐 reme）：**决策**（走了哪个分支、安装目录有没有被动）
+     ⚠️ 判定口径：**决策**（走了哪个分支、安装目录有没有被动）
      用日志行 + 目录内容这些**确定性**证据断言；**"进程有没有被真的拉起来"**是异步副作用，
      按 `_observe_started` 只记录不判定——连续跑门禁时 `start` 被拒建进程是实测过的；
   D. `launch_pending_cmd`：CREATE_NO_WINDOW | DETACHED_PROCESS，list argv；
   E. 渲染文本的结构面：每处 `start` 各自带存在性守卫 + 每标签块 start 数 = 设计值；
   F. 单元级控制：把真跑中走不到的分支（超时红灯、只读自证兜底）跑一遍；
   G. sweep 两类都清 + 隔离 + 对照样本；
-  H. 接线（C-27）。
+  H. 接线（module-wiring-referenced）。
 
 隔离：数据根用 `LOCAL_SPEAK2TEXT_DATA_DIR` 重定向；替换脚本用 GUI 子系统 `.vbs`
-当假 exe（R1「替身必须存在」——目标恒存在，判"是否被启动"只看副作用 marker）。
+当假 exe（替身必须存在——目标恒存在，判"是否被启动"只看副作用 marker）。
 """
 import os
 import re
@@ -46,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 _TMP_DATA = scratch_dir("l-s2t-upd-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP_DATA
 
-# F11（施工单 §5 第 3 项）：sweep_stale_update_dirs 会 glob `%TEMP%`。测试必须用**隔离的
+# sweep_stale_update_dirs 会 glob `%TEMP%`。测试必须用**隔离的
 # `%TEMP%`**，否则它会去扫用户真实临时目录（可能删掉别的工具/本工具在跑的更新残留）。
 # `tempfile.tempdir` 显式钉死 + TEMP/TMP 环境变量一并改（对子进程也生效）。
 _TMP_TEMP = scratch_dir("l-s2t-upd-temp-")
@@ -101,7 +99,7 @@ def _probe_vbs(marker, note=""):
     `started-new.txt`（**等长**），又是同一次时钟 tick 内写下的——于是铺新版时 robocopy
     会把它跳过，`install` 里留下旧的那份、"新版本被启动"随机变红。
     这条**不是推测**：`reme-helper/tests/test_update_bat.py` 已实测为"大约三次里一次"，
-    并把 note 加长作为修法（2026-09-20 对齐全家族口径时移植过来）。
+    并把 note 加长作为修法。
     """
     body = ('Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
             'Set f = fso.CreateTextFile(fso.GetParentFolderName(WScript.ScriptFullName) '
@@ -113,7 +111,7 @@ def _probe_vbs(marker, note=""):
 def _observe_started(marker, what):
     """**观察（不作为判据）**被 `start` 拉起的进程是否写下了 marker。
 
-    口径来自 reme-helper 同一套门禁的裁定（已实测、已落地，2026-09-20 对齐到本仓）：
+    口径来自 reme-helper 同一套门禁（已实测、已落地）：
     `start ""` 是异步的，且连续跑门禁时 **Windows 可能拒绝新建进程/控制台**（桌面堆压力；
     reme 实测用 `.bat` 当假 exe 时是"约三次里一次"）。把这种"进程有没有被创建"当成判据，
     换来的是一条约三次红一次的门禁——而它**并不反映产品语义**。
@@ -146,10 +144,10 @@ check("sha256: real '<hash>  <name>' line passes",
 
 
 # ==================== B. 替换脚本真跑（模板 bat） ====================
-# R1（2026-09-19 lead 裁定，全家族硬性）：**替身必须永远存在**。
+# 替身必须永远存在（全家族硬性）。
 # `start "" "<不存在的目标>"` 会弹模态框——`.exe` 是"找不到文件"，`.vbs` 是
 # Windows Script Host 的"无法找到脚本文件"，两者都会把无 console 的 detached 脚本
-# 永久挂死，并在用户桌面上留一个点不掉的窗口（当天真实事故：桌面 15 个模态框）。
+# 永久挂死，并在用户桌面上留一个点不掉的窗口。
 # 因此本文件**不再用"目标不存在"构造任何场景**：install 永远有 probe.vbs，
 # "有没有被启动"一律看**副作用**（marker 文件是否被写）。
 def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
@@ -173,7 +171,7 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
                 except OSError:
                     pass
     # 现场证据（marker + 日志 + 轮询文件）**每个场景都清空**。不清的话后面几个场景的
-    # "marker 写了 / 日志记了"会**继承前一场景的产物**而变成假绿——2026-09-20 实测：
+    # "marker 写了 / 日志记了"会**继承前一场景的产物**而变成假绿：
     # CI 上 `bat empty-stage: failure marker written` 就是靠 `_bat_failure` 留下的
     # marker 变绿的；而"日志末行是哪一行"也失去判别力（日志是 `>>` 累加的）。
     for f in (root / "update.failed", root / "update.log", root / "update.log.poll"):
@@ -183,13 +181,13 @@ def _stage(root, stage_missing=False, stage_empty=False, bad_snapshot=False,
             pass
     for d in (install, stage, work):
         d.mkdir(parents=True)
-    # R1：目标目录的替身**恒存在**——任何分支上的 `start` 都只会命中真实文件。
+    # 目标目录的替身**恒存在**——任何分支上的 `start` 都只会命中真实文件。
     (install / "probe.vbs").write_text(_probe_vbs("started-old.txt", note="old"),
                                        encoding="ascii")
-    # 只读保险（lead 令，2026-09-19）：`del <file>` / `os.unlink` / Python `rmtree`
+    # 只读保险：`del <file>` / `os.unlink` / Python `rmtree`
     # 都删不掉它，于是没有哪一步能把它弄丢、让后面的 `start` 指向空气。
     # ⚠️ 只读是部分保险，不是结构保证（`rmdir /s /q <父目录>` 与 `robocopy /e /purge`
-    # 都能绕过它）。定位：多一层兜底，**不能替代** R1 + 三处 start 守卫 + R4 超时变红。
+    # 都能绕过它）。定位：多一层兜底，**不能替代**「替身恒在 + 三处 start 守卫 + 超时变红」。
     os.chmod(install / "probe.vbs", stat.S_IREAD)
     (install / "data-old.txt").write_text("old", encoding="utf-8")
     if not stage_missing and not stage_empty:
@@ -241,13 +239,12 @@ def _kill_stray_wscript(root):
 def _run_bat(root, p, limit=25.0, echo_on=False):
     """真跑替换脚本，返回 (elapsed, timed_out)。
 
-    R4：**超时即红**，并在消息里点名"疑似模态框"——挂死比失败更糟（CI 挂住不报错）。
+    **超时即红**，并在消息里点名"疑似模态框"——挂死比失败更糟（CI 挂住不报错）。
     超时后尽力关掉本次 root 触发的 wscript/cscript，避免把模态框留在用户桌面上。
 
-    stdout/stderr **落盘而不是丢弃**（2026-09-20 改）：旧写法用 `DEVNULL` 把 bat 自己
+    stdout/stderr **落盘而不是丢弃**：旧写法用 `DEVNULL` 把 bat 自己
     的报错也一并吞了，于是 CI 上出现"bat 只写下一行日志就没了"时，**手上一条 cmd 的
-    错误信息都没有**——只能靠猜（当晚连续证伪了 `rem` 里的 `|`、`rem` 里的 `>`、
-    重定向失败中止批处理三条假说）。cmd 在"找不到批处理标签"这类情况下是**静默终止**
+    错误信息都没有**——只能靠猜。cmd 在"找不到批处理标签"这类情况下是**静默终止**
     批处理并把话只写在 stderr 上，所以这行捕获就是唯一的证词。
 
     `echo_on=True`（取证用）：把渲染出的 bat 首行 `@echo off` 换成 `@echo on`，让 cmd
@@ -267,7 +264,7 @@ def _run_bat(root, p, limit=25.0, echo_on=False):
     # `script.write_text(text, encoding="mbcs")`（不传 newline）⇒ Windows 的文本模式把
     # `\n` 翻成 `\r\n`。旧写法传了 `newline=""`，于是**测试喂给 cmd 的是一个 LF-only 的
     # bat，而产品永远不会产生这种文件**。
-    # 代价（2026-09-20 实测，CI 门禁因此连红两轮）：cmd.exe 对 LF-only 批处理文件的
+    # 代价：cmd.exe 对 LF-only 批处理文件的
     # `goto` 标签查找**与字节相位有关**——同一份内容，root 路径长度落在 79..85 字节时
     # `goto stage_invalid` 报 "The system cannot find the batch label specified"，
     # 落在 78 或 86+ 就正常（判据：`_verify-scratch/bat-label-band-sweep.py` 的逐长度扫描）。
@@ -332,7 +329,7 @@ def _tail(path, limit=1200):
 def _gha_annotate(text, title="update-safety diagnostics"):
     """把取证块以 GitHub Actions 的 `::error::` 工作流命令打出去。
 
-    为什么非要有这条通道（2026-09-20 实测）：**CI 的步骤日志需要登录才能读**
+    为什么非要有这条通道：**CI 的步骤日志需要登录才能读**
     （匿名访问只看到 "Sign in to view logs"），而 run 摘要页上的**注解（annotation）
     是公开可读的文本**。本文件在 CI 上失败时，能把证据带出来的就只有注解。
 
@@ -492,7 +489,7 @@ def _bat_failure_no_restore(root):
     check("bat no-restore: really reached :install_dead", "RESTORE FAILED" in log_text,
           log_text[-140:].replace("\n", " | "))
     check("bat no-restore: failure marker written", p["failed"].exists())
-    check("bat no-restore: target still holds a real exe (R1 invariant)",
+    check("bat no-restore: target still holds a real exe (stand-in invariant)",
           (p["install"] / "probe.vbs").exists())
 
 
@@ -504,7 +501,7 @@ def _bat_empty_stage(root):
     不启动新版本、保留现场；差别在"旧版是否被拉回"（本文件按 `_observe_started` 的口径
     只**观察**这一条，判定用日志那行 `install untouched` + 目录未动的确定性证据）。
 
-    **本场景整段可重试**（2026-09-20，CI red 后的收口）：重试的判据**不是任何产品断言**，
+    **本场景整段可重试**：重试的判据**不是任何产品断言**，
     而是两条前置条件——`_reached_terminal()`（"脚本跑到终态了吗"）与 `ok_log`
     （"走到 `:stage_invalid` 了吗"）。两条本身也都是 ok/FAIL，不允许静默。
       * 事实：CI run 35488810525（commit `ec8192d`，与本机 HEAD 同一份字节）上，实测日志
@@ -571,7 +568,7 @@ finally:
 # ==================== D. launch_pending_cmd：无控制台 + 脱离父进程 ====================
 _root_d = Path(scratch_dir("l-s2t-launch-"))
 try:
-    # D1 旗标断言：必须是 CREATE_NO_WINDOW | DETACHED_PROCESS，且是 list 形式（无 shell）
+    # 旗标断言：必须是 CREATE_NO_WINDOW | DETACHED_PROCESS，且是 list 形式（无 shell）
     seen = {}
     _real_popen = subprocess.Popen
 
@@ -594,7 +591,7 @@ try:
           bool(flags & getattr(subprocess, "DETACHED_PROCESS", 0)))
     check("launch: returns True", launched is True)
 
-    # D2 真实拉起：脚本写 marker 后退出；调用立即返回，脚本继续跑完
+    # 真实拉起：脚本写 marker 后退出；调用立即返回，脚本继续跑完
     marker = _root_d / "ran.txt"
     script = _root_d / "probe.bat"
     script.write_text('@echo off\r\necho ok > "%~dp0ran.txt"\r\n',
@@ -608,7 +605,7 @@ finally:
 
 
 # ==================== E. 渲染文本的结构面（每处 start 自带守卫 + 分支 start 数） ====================
-# 施工单 §5 第 1 项：两条 `start` 路径的存在性守卫回归。模板 L237/L253 是"每处 start
+# 两条 `start` 路径的存在性守卫回归。模板 L237/L253 是"每处 start
 # 各自验"，不能靠别处的守卫代证。运行期由 B 组三个场景覆盖"守卫在时不会挂"，这里再钉
 # "守卫本身在文本里存在"——守卫被删掉时，B 组可能因"目标恰好还在"而侥幸通过，只有这条会红。
 _root_e = Path(scratch_dir("l-s2t-guards-"))
@@ -632,7 +629,7 @@ try:
     check("script: fork-only :start_missing is gone with the fork",
           ":start_missing" not in _text)
 
-    # 逐分支断言（施工单 §5 第 1 项）：每个标签块内的 start 数 = 设计值，且该块的 start
+    # 逐分支断言：每个标签块内的 start 数 = 设计值，且该块的 start
     # **自带守卫**。模板的守卫形态与 fork 不同（不止"紧邻上一行"）：
     #   :gone          -> 前几行有 `if not exist "{newexe}" goto install_failed`
     #   :stage_invalid -> 同一行 `if exist "{newexe}" start "" "{newexe}"`
@@ -671,25 +668,25 @@ finally:
 
 
 # ==================== F. 单元级控制：把"存在但从未走到"的分支跑一遍 ====================
-# 来源：复核员自查（2026-09-19）——分支存在 ≠ 分支被覆盖。
+# 分支存在 ≠ 分支被覆盖。
 _c_unit = Path(scratch_dir("l-s2t-unitctrl-"))
 try:
-    # F1 只读自证的**兜底分支**：保护未生效（文件可写）时必须 (a) 返回 False (b) 把文件写回。
+    # 只读自证的**兜底分支**：保护未生效（文件可写）时必须 (a) 返回 False (b) 把文件写回。
     _w = _c_unit / "probe.vbs"
     _w.write_text(_probe_vbs("started-old.txt"), encoding="ascii")
     _ok_w, _det_w = _readonly_selfproof(_w)
     check("unit: self-proof FAILS on a writable file (protection absent)",
           _ok_w is False, repr(_det_w))
-    check("unit: self-proof rewrites the target when protection is absent (R1 kept)",
+    check("unit: self-proof rewrites the target when protection is absent (stand-in kept)",
           _w.is_file() and "started-old.txt" in _w.read_text(encoding="ascii"),
           "exists=%s" % _w.is_file())
 
-    # F2 同一条自证在**只读**文件上必须返回 True。
+    # 同一条自证在**只读**文件上必须返回 True。
     os.chmod(_w, stat.S_IREAD)
     _ok_r, _det_r = _readonly_selfproof(_w)
     check("unit: self-proof PASSES on a read-only file", _ok_r is True, repr(_det_r))
 
-    # F3 超时判定：`_check_no_hang` 的"红灯"路径真跑中从未走到（没有真挂死）。
+    # 超时判定：`_check_no_hang` 的"红灯"路径真跑中从未走到（没有真挂死）。
     _real_check = check
     _recorded = []
     globals()["check"] = lambda name, ok, detail="": _recorded.append((name, ok, detail))
@@ -729,10 +726,10 @@ check("giveup text: default render still equals UPDATE_WAIT_BUDGET_S",
                                    U.UPDATE_WAIT_BUDGET_S))
 
 
-# ==================== G. sweep_stale_update_dirs：两类都清（施工单 §5 第 2/3 项） ====================
-# F11 隔离自证：**先**证明 gettempdir 指向隔离目录，再做清扫断言；否则这个测试会去
+# ==================== G. sweep_stale_update_dirs：两类都清 ====================
+# 隔离自证：**先**证明 gettempdir 指向隔离目录，再做清扫断言；否则这个测试会去
 # 扫、甚至删掉用户真实 %TEMP% 里的东西。
-check("sweep: gettempdir is the isolated dir (F11 - this test never touches real %TEMP%)",
+check("sweep: gettempdir is the isolated dir (this test never touches real %TEMP%)",
       Path(tempfile.gettempdir()) == Path(_TMP_TEMP),
       "gettempdir=%s isolated=%s" % (tempfile.gettempdir(), _TMP_TEMP))
 check("sweep: TEMP_PREFIX matches the two artifact classes",
@@ -776,12 +773,12 @@ check("sweep negative control: non-matching prefix still kept",
       _other.exists())
 
 
-# ==================== H. 接线：C-27 MUST-WIRE 三符号（施工单 §5 第 4 项） ====================
+# ==================== H. 接线：module-wiring-referenced MUST-WIRE 三符号 ====================
 # dsh/ocx 踩过"拷到位但零引用"：机械哈希全绿，README 承诺的 sweep/pop 从未发生。
 _main_src = (Path(__file__).resolve().parents[1] / "src" / "main.py").read_text(
     encoding="utf-8")
 for _sym in ("sweep_stale_update_dirs", "pop_failed_update_note", "launch_pending_cmd"):
-    check("wiring (C-27): main.py references %s" % _sym,
+    check("wiring (module-wiring-referenced): main.py references %s" % _sym,
           re.search(r"\b%s\b" % re.escape(_sym), _main_src) is not None)
 check("wiring: the fork module is gone (no src/updater.py consumer left)",
       not (Path(__file__).resolve().parents[1] / "src" / "updater.py").exists())

@@ -37,7 +37,7 @@ from template.update_helper import (check_update, download_and_prepare,
 from keyboard_hook import KeyboardHook
 # ⚠️ `MODEL_DIR` / `MODEL_NAME` 有意**不**在这里 from-import：`from ... import X` 绑的是
 # **导入那一刻的静态副本**，而 `pipeline.load_config()` 之后重绑的是 `pipeline.MODEL_DIR`。
-# 两者一旦不同步，用户就会看到"换了模型目录、对话框还开在旧目录、通知还印旧目录"（#47）。
+# 两者一旦不同步，用户就会看到"换了模型目录、对话框还开在旧目录、通知还印旧目录"。
 # 需要它们时一律现取：`pipeline.MODEL_DIR`。
 import pipeline
 from pipeline import (
@@ -69,7 +69,7 @@ def dprint(*args):
         print(*args, flush=True)
 
 
-# ---------- 运行日志（T12 log_kit） ----------
+# ---------- 运行日志（log_kit） ----------
 
 _LOG_HANDLE = None
 
@@ -87,7 +87,7 @@ def log(*parts):
 
     形态必须与模板件的调用方式一致：`tray_kit` / `autostart` / `update_helper` 都按
     print 形态调用（`log("downloading", stem)`、`log("update staged:", staged, "->", target)`），
-    单参包装会在模板件内部直接 TypeError（C-29 判据；dsh/ocx 早有 `def log(*parts)`）。
+    单参包装会在模板件内部直接 TypeError（判据·log可变参 判据；dsh/ocx 早有 `def log(*parts)`）。
     拼接后**只传一个字符串**给 log_kit，因此对 1.0.2（单参闭包）与 1.0.3（print 形态）都成立。
     日志失败静默——日志永远不能把主流程弄死。
     """
@@ -146,7 +146,7 @@ def _install_excepthooks():
     )
 
 
-# ---------- 单实例（T7 tray_kit；本文件只留 --smoke 的合法性探针） ----------
+# ---------- 单实例（tray_kit；本文件只留 --smoke 的合法性探针） ----------
 
 # 命名内核对象：命名空间前缀 `Local\` 之后**不允许再出现反斜杠**。
 # 1.2.0~1.4.0 写成 r"Local\%s\SingleInstance"（多一个反斜杠）→ CreateMutexW 返回
@@ -183,20 +183,20 @@ def update_repo():
     ⚠️ 必须在**调用侧**拦下"未配置"：模板 `update_helper` 的 `repo=` 缺省会回退到
     `appconfig` 的 `REPO` 常量（= 出厂默认），直接传空串会把"用户删了 update_repo"
     静默变成"照常去查出厂默认仓库"，`update_no_repo` 这条用户可见文案将永不出现
-    （施工单 §3-A：三重用户可见支撑之一）。所以空串在此返回，由调用方决定：
+    （三重用户可见支撑之一）。所以空串在此返回，由调用方决定：
     手动检查报 `update_no_repo`，后台启动检查静默跳过。
     """
     return str(load_config_dict().get("update_repo", "") or "").strip()
 
 
-# ---------- 开机自启（T3 autostart；target="stable" = 指向稳定安装位） ----------
+# ---------- 开机自启（autostart；target="stable" = 指向稳定安装位） ----------
 
-# ---------- 托盘图标（W6 静态贴图：运行时零绘制，tray_icons 按档加载） ----------
+# ---------- 托盘图标 ----------
 
 from template.tray_icons import tray_icons
 
 
-# menu_is_open 探测器已随 tray_kit 2.3.0 下沉模板（W7 Decision 9），此处不再内联。
+# menu_is_open 探测器已随 tray_kit 2.3.0 下沉模板，此处不再内联。
 
 
 class Tray:
@@ -205,10 +205,10 @@ class Tray:
     def __init__(self, controller):
         self.controller = controller
         # 更新状态**不在这里存副本**：唯一写入点是 update_helper 的 _PUBLISHED，
-        # 菜单可用性一律现取 `update_ready()`（施工单 §4：消灭"两处状态"）。
+        # 菜单可用性一律现取 `update_ready()`（消灭"两处状态"）。
         self.status_text = i18n.t("tray_loading") % APP_NAME  # 菜单第①段信息行
         self._stop = threading.Event()
-        # E2-09：签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
+        #签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
         self._menu_sig = tray_kit.MenuSignature(
             self.rebuild, menu_is_open=tray_kit.menu_is_open, log=log)
         tray_icons.init()
@@ -221,7 +221,7 @@ class Tray:
         tray_icons.bind(self.icon, "idle")
 
     def _build_menu(self):
-        """house 标准八段式（执行文档 D14）：信息 → 更新 → 默认入口 → 业务 → 打开 → 偏好 → 退出。"""
+        """house 标准八段式：信息 → 更新 → 默认入口 → 业务 → 打开 → 偏好 → 退出。"""
         return pystray.Menu(
             # ① 信息区（只读）
             pystray.MenuItem(lambda _item: "%s v%s" % (APP_NAME, VERSION), None, enabled=False),
@@ -875,13 +875,13 @@ class Controller:
         top.geometry("+%d+%d" % ((sw - 640) // 2, max(30, (sh - 480) // 3)))
 
     def _confirm_quit(self):
-        """退出二次确认（T7 tray_kit.confirm_quit_dialog；G4.1 条款 4 / G4.2 条款 5）。
+        """退出二次确认（tray_kit.confirm_quit_dialog）。
 
         旧内联版没有 <Escape> 绑定——GUI 实测按 Esc 关不掉弹窗；模板版有。
         降级链（禁止跳过确认）：富对话框 → 原生 askyesno → 链路不可用时放行退出。
         勾选项 = 退出后是否自动安装已下载的更新；勾选动作即落盘（点取消也留存）。
 
-        三态必须分开（#44-A，与 dsh/ocx 的 `_decide_quit` 同形）：
+        三态必须分开（与 dsh/ocx 的 `_decide_quit` 同形）：
           None              → 弹窗链路整个不可用（**不是**用户作答）⇒ 放行退出，
                               且 `quit_apply_update = False`（**不沿用已存勾选**）
           {"go": False}     → 用户明确取消（Esc / 关窗 / 「取消」）⇒ 不退出
@@ -947,7 +947,7 @@ class Controller:
             self.on_state_change(recording)
 
     def _choose_model_dir(self):
-        # 现取：对话框的初始目录必须是**此刻**的模型目录（#47），不是导入期的快照
+        # 现取：对话框的初始目录必须是**此刻**的模型目录，不是导入期的快照
         current = pipeline.MODEL_DIR
         initial = current if os.path.isdir(current) else os.path.dirname(os.path.abspath(current))
         chosen = filedialog.askdirectory(title=i18n.t("menu_choose_model_title"), initialdir=initial)
@@ -998,20 +998,20 @@ def main():
                                  i18n.t("dup_cancelled")]),
             title=APP_NAME)
         return 0
-    # C-2（paths 1.1.4）：让**内核**替我们拒绝"删除/改名正在运行的实例目录"，而不是靠纪律。
+    # exe-delete-guard（paths 1.1.4）：让**内核**替我们拒绝"删除/改名正在运行的实例目录"，而不是靠纪律。
     # **必须在托盘/窗口创建之前**（README 采纳步骤第 4 条："顺序不能再往后挪"）——所以放在
     # 守卫放行之后、`Overlay()`/`Tray()` 之前，而不是紧贴 `Overlay()`：这样更新兜底与自启
-    # 自愈这两步也落在保护窗口内。失败放行 / dev 态跳过都在被调函数里（D3.2），这里不判返回值。
+    # 自愈这两步也落在保护窗口内。失败放行 / dev 态跳过都在被调函数里，这里不判返回值。
     hold_exe_delete_guard(log=log)
     # 被中断的更新会在 %TEMP% 留下整包（暂存目录）与替换脚本（文件）——启动时先回收
     # **一小时前**的（正在进行的不碰）。模板 README 采纳步骤 4：扫残留要在读失败通知之前。
-    # 本仓旧实现的"启动兜底 process_pending_update"已随切模板删除（施工单 §3-B，有意）。
+    # 本仓旧实现的"启动兜底 process_pending_update"已随切模板删除（有意）。
     swept = sweep_stale_update_dirs()
     if swept:
         log("swept %d stale update artifact(s) from %%TEMP%%" % swept)
     migrate_autostart(log=log)
     log("startup %s v%s (pid %s)" % (APP_NAME, VERSION, os.getpid()))
-    # C-38 启动自证（唯一正本样例，CONFORMANCE §4.1.38）：把**解析后**的数据根 / 配置路径
+    # 判据·启动自证 启动自证：把**解析后**的数据根 / 配置路径
     # 写进产物自带的日志（不是默认字面量、不是别名）。下一次 %TEMP% 残留归属不明时，
     # 只有这两行能把实例钉到具体的数据根与配置文件。
     log("data root: %s" % USER_DATA_DIR)
@@ -1028,13 +1028,13 @@ def main():
     tray.notify(i18n.t("notify_loading"))
 
     # 上次自动更新失败？托盘已退出、失败只能下次启动说（读一次即删）。
-    # update_dir 必须显式传：模板件没有默认值（施工单 §4）。
+    # update_dir 必须显式传：模板件没有默认值。
     failed_note = pop_failed_update_note(UPDATE_DIR, log=log)
     if failed_note:
         tray.notify(failed_note, APP_NAME)
 
     # --quit 请求文件监视（tray_kit 三循环之③）：走与托盘退出同一条清理路径。
-    # 纪律（F11）：请求文件落在数据区，必须随 <APP>_DATA_DIR 重定向。
+    # 纪律：请求文件落在数据区，必须随 <APP>_DATA_DIR 重定向。
     quit_stop = threading.Event()
     threading.Thread(
         target=tray_kit.quit_watch_loop,
@@ -1101,13 +1101,13 @@ def smoke():
         base = os.path.dirname(os.path.abspath(__file__))
     log = os.path.join(base, "smoke.log")
     try:
-        # D3.1：冒烟必须覆盖单实例守卫——用 tray_kit 探针（只验名字合法，不占锁、
+        # 冒烟必须覆盖单实例守卫——用 tray_kit 探针（只验名字合法，不占锁、
         # 不弹窗），与运行期守卫共用同一份命名判据（2.2.0 的 mutex_name_ok）。
         if not tray_kit.mutex_name_is_valid(APP_ID, mutex_name=MUTEX_NAME):
             raise RuntimeError(i18n.t("smoke_mutex_invalid", MUTEX_NAME))
         load_config()
         # 现取：`load_config()` 刚把 `pipeline.MODEL_DIR` 更新过，校验值 / 引擎实际加载值 /
-        # 打印值必须是**同一个** —— 旧写法三处各读一次快照，可以互不相同（#47 的裂缝）
+        # 打印值必须是**同一个** —— 旧写法三处各读一次快照，可以互不相同
         if not os.path.isdir(pipeline.MODEL_DIR):
             raise RuntimeError(i18n.t("smoke_model_dir_missing", pipeline.MODEL_DIR))
         engine = AsrEngine()
@@ -1173,10 +1173,10 @@ def autotest(wav_path):
 
 
 def request_quit():
-    """`--quit`：给运行中的实例留一个退出请求文件（T7 quit_watch_loop 消费）。
+    """`--quit`：给运行中的实例留一个退出请求文件（tray_kit quit_watch_loop 消费）。
 
-    程序化退出路径**不经二次确认框**（EXIT-03）；请求文件在数据区，
-    随 <APP>_DATA_DIR 重定向，绝不会误伤用户常驻实例（F11）。
+    程序化退出路径**不经二次确认框**（退出·程序化不被卡）；请求文件在数据区，
+    随 <APP>_DATA_DIR 重定向，绝不会误伤用户常驻实例。
     """
     path = tray_kit.make_quit_request_path(USER_DATA_DIR)
     try:
