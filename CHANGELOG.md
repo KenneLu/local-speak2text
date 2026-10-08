@@ -3,6 +3,9 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.6
+- **Semantic IDs across docs, comments and bat annotations** (2026-10-08, W9): single-letter reference codes (criterion IDs, spec section anchors, checklist entry IDs, bat step tags) replaced with semantic names throughout; machine-facing checker interface now uses kebab-case slugs. Documentation/comment/naming layer only - no runtime behavior change; gate re-run green (conformance 0 FAIL, sync 0 drift, full-suite compile pass).
+
 ## 1.4.5
 - **GATE 3's expected text depended on an input the repo does not pin.** The pipeline selftest
   asserted that the transcript contains >=2 of `("欢迎","达摩院","语音")` - the sentence from the
