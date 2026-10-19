@@ -4,7 +4,7 @@
 
 Local, offline speech-to-text dictation for Windows. Hold a hotkey, speak, text lands at your cursor. Multi-engine ASR (Qwen3 / SenseVoice / FireRedASR / Paraformer) with auto-detection, 100% on-device.
 
-A tiny Windows tray tool: hold **Right-Ctrl** and speak — a floating window shows the text live; release and it is typed into whatever window you are in. **Ctrl+Space** toggles continuous mode. Audio never leaves the machine.
+A tiny Windows tray tool: hold **Right-Ctrl** and speak — a floating window shows the text live; release and it is typed into whatever window you are in. **Ctrl+Space** toggles continuous mode. Audio never leaves the machine. Only one instance runs at a time: starting it again never shows an error dialog, it just asks the running instance to remind you with a tray balloon.
 
 ## Install
 
@@ -66,7 +66,9 @@ Use **Check for updates** in the tray menu. A new release downloads with SHA-256
 
 - **"Cannot open microphone"**: another app is holding the mic (remote-desktop tools often do). Close it and retry.
 - **Text did not appear**: typing uses clipboard + Ctrl+V; a few apps (games, elevated windows) block paste.
-- **Crash / no tray icon**: check `%LOCALAPPDATA%\local-speak2text\crash.log` and `log\`.
+- **Starting it twice**: the second launch does not show an error dialog. It quietly asks the running instance to raise a tray balloon ("already running") and exits. If you never see the balloon, look for the existing icon in the notification area.
+- **"Could not create the system tray icon" / no tray icon**: the app was probably launched from a restricted terminal, a sandbox or a remote session. Instead of a traceback it shows a readable message (with a copyable detail block), writes that detail to `crash.log` — in `%LOCALAPPDATA%\local-speak2text\`, falling back to the program folder and then `%TEMP%` if the data folder is unwritable — and exits with code 2. Start it by double-clicking the exe in File Explorer; if it still fails, restart Explorer or the computer.
+- **Crash / other startup failure**: check `%LOCALAPPDATA%\local-speak2text\crash.log` and `log\` (see the tray-icon bullet for the restricted-environment case).
 
 ## Development
 

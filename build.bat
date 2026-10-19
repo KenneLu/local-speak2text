@@ -286,6 +286,20 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem GATE 2j: startup fallbacks (1.4.7). Duplicate launch must be SILENT - it writes
+rem   show.request and exits 0 instead of showing a modal dialog; the resident instance
+rem   consumes the request and raises a tray balloon. Tray/window creation failures must
+rem   become a readable MessageBox + best-effort crash log + exit code 2 (never a bare
+rem   traceback), and the log/smoke/crash tail must be fail-open. All mocked: no Tk
+rem   window, no tray, no model, no real MessageBox.
+echo [TEST] startup fallbacks (duplicate silent + tray failure readable + log fail-open) ...
+"%PY%" tests\test_startup_fallback.py
+if errorlevel 1 (
+  echo [ERROR] startup fallback test failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
 set "LOCAL_SPEAK2TEXT_DATA_DIR="
 if exist "%CD%\build\test-data" rmdir /s /q "%CD%\build\test-data"
 

@@ -107,15 +107,13 @@ M.sweep_stale_update_dirs = lambda *a, **k: CALLS.__setitem__("sweep", CALLS["sw
 M.migrate_autostart = lambda **_kw: CALLS.__setitem__("autostart", CALLS["autostart"] + 1)
 
 # 本测试只验证"守卫放行后启动序列完整走通"，不验证守卫本身（那是
-# test_single_instance.py 的职责）。因此这里把守卫打桩为"放行"，并把重复启动
-# 提示打成 no-op：
+# test_single_instance.py 的职责）。因此这里把守卫打桩为"放行"：
 #   * 生产互斥体是**内核对象**，<APP>_DATA_DIR 隔离不了它（单实例·内核对象隔离）——
-#     用户的托盘实例在跑时，真守卫会返回 False，main() 随即调
-#     warn_duplicate_instance() → MessageBoxW 是**模态阻塞**对话框，测试会
-#     永久挂住（比失败更糟：CI 挂死而不是变红）。
-#   * 打桩后本测试**不依赖生产互斥体是否空闲**，实例在跑也能快速通过。
+#     用户的托盘实例在跑时，真守卫会返回 False，main() 随即走"重复启动移交"分支，
+#     测试就测不到正常启动序列了。
+#   * 重复启动分支自 1.4.7 起是**静默**的（写 show.request + return 0，不再弹模态框），
+#     其行为由 tests/test_startup_fallback.py 覆盖，这里不再需要为"模态框挂死"打桩。
 M.tray_kit.acquire_single_instance = lambda *_a, **_k: True
-M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 
 # ---------- 真实退出流程：待应用的更新必须在 finally 里被真正拉起 ----------
 # 用真实 launch_pending_cmd（不打断言）：脚本写一个 marker，证明退出收尾确实执行了替换脚本，

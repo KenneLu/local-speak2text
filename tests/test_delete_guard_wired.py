@@ -115,10 +115,11 @@ M.hold_exe_delete_guard = _record_guard          # 替身：只记顺序，不�
 M.sweep_stale_update_dirs = lambda *a, **k: None
 M.migrate_autostart = lambda **_kw: None
 
-# 守卫与重复启动提示打桩（理由同 test_startup_path.py）：生产互斥体是内核对象，
-# <APP>_DATA_DIR 隔离不了它；不打桩时用户托盘实例在跑会让 main() 弹**模态** MessageBox。
+# 守卫打桩为"放行"（理由同 test_startup_path.py）：生产互斥体是内核对象，
+# <APP>_DATA_DIR 隔离不了它，用户托盘实例在跑时真守卫会返回 False、main() 走
+# "重复启动移交"分支（1.4.7 起静默写 show.request + return 0，其行为由
+# tests/test_startup_fallback.py 覆盖），本测试就测不到启动序列了。
 M.tray_kit.acquire_single_instance = lambda *_a, **_k: True
-M.tray_kit.warn_duplicate_instance = lambda *_a, **_k: None
 
 rc = M.main()
 

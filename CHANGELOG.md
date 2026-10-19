@@ -7,6 +7,38 @@ The tagging convention matches the versions in this file.
 - **模板件拷贝改 git submodule 借条 + 参数卡（Wave 2，2026-10-19）**：`src/template/` 下的家族模块副本摘除，改为 `git submodule add https://github.com/KenneLu/my-diy-tool-template.git src/template`，钉 kit commit `c600cec`（家族模块只有一份来源）。工具差异参数搬入工具自持的 `src/app_params.py`，由 `template.appconfig` 运行时 `try: import app_params` 覆盖；**专有键 `COLOR_IDLE` / `COLOR_RECORDING` 由本卡持有**（kit 参数卡不覆盖专有键），`main.py` 的 import 拆为「标准键仍从 `template.appconfig` 取」+「`COLOR_*` 从 `app_params` 取」。
 - **版本单一事实源搬家**：`VERSION` 从 `src/template/appconfig/appconfig.py` 搬到 `src/app_params.py`（借条是模板仓内容，不再承载工具版本）；`build.bat` / `release.bat` / `.github/workflows/release.yml` 的 VERSION 解析路径与报错文案、`README.md` / `README.zh-CN.md` 的说明同步；`build.bat` 与 CI `tests.yml` 的 py_compile 列表补 `src/app_params.py`。CI 两个 workflow 的 checkout 改为 `submodules: recursive`（借条模式下裸 checkout 的编译/测试必红）。无运行时行为变化。
 
+## 1.4.7
+- **Duplicate launch is silent** (2026-10-20): starting a second copy used to pop a modal
+  "already running" MessageBox, which users read as an error. The second instance now writes
+  `show.request` into the user data root and exits 0; the resident instance's 1-second watcher
+  consumes it (deletes the file) and raises a tray balloon ("already running"). `--quit` keeps
+  its priority: quit.request is still handled by the template loop and the show watcher never
+  touches it. A stale request left by a previous crash is cleared right after the
+  single-instance mutex is acquired, so a normal start never shows a misleading balloon.
+- **Tray / window startup failures are readable**: a PermissionError (restricted terminal,
+  sandbox, remote session) or a Tk failure used to escape as an English traceback from the
+  windowed exe. `Tray()` / `run_detached()` and the Tk overlay are now wrapped: a readable
+  MessageBox (localized headline + common causes + "start from File Explorer / restart
+  Explorer" + copyable detail), best-effort crash log (`crash.log` in the data root, falling
+  back to the program folder and `%TEMP%`) and exit code 2. pystray builds its window on a
+  detached thread, so readiness is observed through a setup callback (8 s timeout) and the
+  thread's last uncaught exception is surfaced in the dialog. Headless entries
+  (`--smoke` / `--quit` / `--autotest`) never show a MessageBox, and a failing MessageBoxW
+  cannot crash the failure handler.
+- **Log chain re-audited (fail-open)**: lazy log init now caches a no-op fallback (one failed
+  `make_logger` attempt per process instead of one per log line) and records the failure; the
+  `--smoke` verdict write is best-effort (an unwritable read-only install folder no longer
+  turns a smoke verdict into an interpreter error); `crash_log()` catches any exception
+  (previously only `OSError`) and falls back through three locations; the sys/threading
+  exception hooks cannot throw.
+- **CJK/Latin spacing audit**: a full scan of every string literal in `src/main.py` and every
+  `locales/zh.json` value found **no user-visible Chinese text glued to Latin letters/digits**
+  (the only hit is one internal docstring about `log` varargs, left as-is); the en table stays
+  natural. No user-visible copy changed for spacing.
+- **VERSION 1.4.6 -> 1.4.7.** New mock-only gate `tests/test_startup_fallback.py` (no Tk
+  window, no tray, no model, no real MessageBox) covers the behaviours above and runs as
+  GATE 2j in `build.bat`.
+
 ## 1.4.6
 - **Semantic IDs across docs, comments and bat annotations** (2026-10-08, W9): single-letter reference codes (criterion IDs, spec section anchors, checklist entry IDs, bat step tags) replaced with semantic names throughout; machine-facing checker interface now uses kebab-case slugs. Documentation/comment/naming layer only - no runtime behavior change; gate re-run green (conformance 0 FAIL, sync 0 drift, full-suite compile pass).
 

@@ -16,9 +16,11 @@ import json
 import os
 import queue
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
+import traceback
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox
 
@@ -74,13 +76,36 @@ def dprint(*args):
 # ---------- 运行日志（log_kit） ----------
 
 _LOG_HANDLE = None
+_LOG_INIT_ERROR = None          # None = 正常；非 None = 惰性初始化失败的原因（启动失败文案会据此说明）
+_LAST_CRASH = {"kind": "", "text": ""}   # 最近一次未捕获异常（托盘线程的失败详情靠它带进弹窗）
+
+
+def _noop_log(*parts):
+    """print 形态的无操作日志（日志初始化失败后的退化实现）。"""
+    return None
+
+
+def _noop_open_log_dir():
+    return None
 
 
 def _log_handle():
-    """惰性初始化：守卫/异常钩子在 main() 之前也可能要记日志。"""
-    global _LOG_HANDLE
+    """惰性初始化：守卫/异常钩子在 main() 之前也可能要记日志。
+
+    初始化**只尝试一次**：失败后缓存无操作闭包，避免每个 log 调用都重试一次注定失败的
+    IO（受限环境里日志目录可能永远建不出来）。失败方向为放行——日志永远不能把主流程弄死。
+    """
+    global _LOG_HANDLE, _LOG_INIT_ERROR
     if _LOG_HANDLE is None:
-        _LOG_HANDLE = log_kit.make_logger(LOG_DIR)
+        try:
+            _LOG_HANDLE = log_kit.make_logger(LOG_DIR)
+        except Exception as exc:
+            _LOG_INIT_ERROR = exc
+            try:
+                print("log init failed: %s" % exc, file=sys.stderr, flush=True)
+            except Exception:
+                pass
+            _LOG_HANDLE = (_noop_log, _noop_open_log_dir)
     return _LOG_HANDLE
 
 
@@ -100,52 +125,82 @@ def log(*parts):
 
 
 def open_log_dir():
-    """托盘「打开日志目录」的落地动作。"""
+    """托盘「打开日志目录」的落地动作。
+
+    失败静默：日志链路坏掉时，这个托盘动作也不该把托盘线程弄死。
+    """
     try:
         _log_handle()[1]()
     except Exception:
         pass
 
 
-def crash_log(text):
-    """崩溃兜底：任何线程的未捕获异常都落到用户数据区 crash.log。
+def _crash_log_paths():
+    """崩溃日志落点（best-effort 链）：用户数据区 → 程序目录 → %TEMP%。
 
-    --noconsole 打包后 stderr 不存在，没有这个文件闪退就无迹可寻。
+    用户数据区不可写（受限终端 / 沙箱 / 只读安装位）时，不能连"为什么没起来"的
+    证据都留不下——这正是 workspace 里启动被环境限制时的形态。
     """
-    try:
-        from template.paths import USER_DATA_DIR
+    return (
+        USER_DATA_DIR / "crash.log",
+        RUN_DIR / "crash.log",
+        Path(tempfile.gettempdir()) / (APP_ID + "-crash.log"),
+    )
 
-        USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(USER_DATA_DIR / "crash.log", "a", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text.rstrip() + "\n")
-    except OSError:
-        pass
+
+def crash_log(text):
+    """崩溃兜底：未捕获异常/启动失败写 crash.log，返回实际写入路径（全失败返回 None）。
+
+    失败方向：宁可少一份日志，也不能在崩溃处理路径上再抛第二个异常（旧实现只吞
+    OSError，异常对象/路径不是 OSError 时照样把异常钩子弄死）。
+    """
+    line = time.strftime("%Y-%m-%d %H:%M:%S ") + str(text).rstrip() + "\n"
+    for path in _crash_log_paths():
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+            return path
+        except Exception:
+            continue
+    return None
+
+
+def _last_crash_text():
+    """最近一次未捕获异常的文本（没有时返回空串）。"""
+    return _LAST_CRASH["text"]
 
 
 def _install_excepthooks():
     """主线程 + 所有线程的未捕获异常：写 crash_log（打包后这才是唯一可见出口）。"""
 
     def dump(kind, exc, tb):
-        import traceback
-
         text = "%s: %s\n%s" % (kind, exc, "".join(traceback.format_exception(exc)))
+        _LAST_CRASH["kind"] = kind
+        _LAST_CRASH["text"] = text
         crash_log(text)
         log("CRASH " + text.splitlines()[0])
 
     old_sys = sys.excepthook
 
     def sys_hook(t, v, tb):
-        dump("sys.excepthook", v, tb)
-        old_sys(t, v, tb)
+        try:
+            dump("sys.excepthook", v, tb)
+        except Exception:
+            pass
+        try:
+            # 链回默认钩子；--noconsole 打包后 stderr 可能不存在，连这一步也不许抛。
+            old_sys(t, v, tb)
+        except Exception:
+            pass
     sys.excepthook = sys_hook
 
     def thread_hook(args):
-        dump("thread %s" % getattr(args, "name", "?"), args.exc_value, None)
-        old_thread = threading.excepthook
-        # 不链旧钩子：默认行为是打印到不存在的 stderr
-    threading.excepthook = lambda args: dump(
-        "thread %s" % getattr(args, "name", "?"), args.exc_value, None
-    )
+        try:
+            dump("thread %s" % getattr(args, "name", "?"), args.exc_value, None)
+        except Exception:
+            pass
+    threading.excepthook = thread_hook
 
 
 # ---------- 单实例（tray_kit；本文件只留 --smoke 的合法性探针） ----------
@@ -162,6 +217,74 @@ MUTEX_NAME = r"Local\%s-single-instance" % APP_ID
 # 它与守卫共用同一份命名判据 `mutex_name_ok()`（此处不再保留第二份定义）。
 # MUTEX_NAME 仍留在本文件：--smoke 显式把名字交给探针，同时也被 test_single_instance
 # 用来断言"派生名 == 这个名字"。
+
+
+# ---------- 重复启动移交（show.request） ----------
+# 第二实例不再弹模态框（用户把它当"报错"）：在用户数据根写一个 show.request 后**静默
+# 退出 0**；常驻实例的 1 秒拍循环消费它 → 删文件 + 托盘气泡「已在运行」。
+# 落点与模板 quit.request 同约定（用户数据根）。模板 tray_kit 目前只有 quit 请求件，
+# 没有 show 请求件，故路径与消费者由本工具自持（不改模板借条）。
+SHOW_REQUEST_PATH = USER_DATA_DIR / "show.request"
+_TRAY_ICON = None   # 常驻实例的托盘（consume_show_request 弹气泡用；main() 里赋值）
+
+
+def request_show_notification():
+    """第二实例：写 show.request 请常驻实例报个到；返回是否写成功。
+
+    写失败只落日志并返回 False——一个提示不能再制造第二个错误（少一次气泡，不拦退出）。
+    """
+    try:
+        SHOW_REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SHOW_REQUEST_PATH.write_text(time.strftime("%Y-%m-%dT%H:%M:%S\n"), encoding="utf-8")
+        log("duplicate launch: asked the resident instance to notify (%s)" % SHOW_REQUEST_PATH)
+        return True
+    except Exception as exc:
+        log("duplicate launch: cannot write %s: %s" % (SHOW_REQUEST_PATH, exc))
+        return False
+
+
+def consume_show_request():
+    """常驻实例侧：消费一次 show.request → 删文件并弹托盘气泡；返回是否真的消费了。"""
+    try:
+        if not SHOW_REQUEST_PATH.exists():
+            return False
+        SHOW_REQUEST_PATH.unlink()
+    except OSError as exc:      # 另一实例正在写/删同一文件：下一拍再看，不刷屏、不抛
+        log("show request unreadable: %s" % exc)
+        return False
+    log("duplicate launch requested a notification; notifying")
+    icon = _TRAY_ICON
+    if icon is not None:
+        try:
+            icon.notify(i18n.t("notify_already_running", APP_NAME), APP_NAME)
+        except Exception as exc:
+            log("already-running notify failed: %s" % exc)
+    return True
+
+
+def clear_stale_show_request():
+    """启动时清掉上一轮残留的 show.request，避免消费出一个误导性的气泡。
+
+    残留来源：第二实例写完请求后、常驻实例在 1 秒拍消费之前就退出了。调用点必须在
+    **已持有单实例锁之后**——那一刻磁盘上的旧请求不可能属于任何活着的实例。
+    """
+    try:
+        SHOW_REQUEST_PATH.unlink(missing_ok=True)
+    except OSError as exc:
+        log("stale show request unreadable: %s" % exc)
+
+
+def show_watch_loop(stop_event, beat=1.0):
+    """1 秒拍消费重复启动请求（与模板 quit_watch_loop 并行，互不阻塞）。
+
+    `--quit` 的优先级不变：退出请求由 quit_watch_loop 独立处理（另一个文件、另一条
+    路径），show 请求既不会挡住退出，也不会被退出路径吞掉。
+    """
+    while not stop_event.wait(beat):
+        try:
+            consume_show_request()
+        except Exception as exc:
+            log("show watch loop failed: %s" % exc)
 
 
 # ---------- 配置 ----------
@@ -210,6 +333,7 @@ class Tray:
         # 菜单可用性一律现取 `update_ready()`（消灭"两处状态"）。
         self.status_text = i18n.t("tray_loading") % APP_NAME  # 菜单第①段信息行
         self._stop = threading.Event()
+        self._ready = threading.Event()   # 托盘窗口真的立起来了（pystray setup 回调置位）
         #签名变了才重建菜单，菜单开着时推迟——根治右键菜单突然失焦
         self._menu_sig = tray_kit.MenuSignature(
             self.rebuild, menu_is_open=tray_kit.menu_is_open, log=log)
@@ -296,8 +420,21 @@ class Tray:
                 pass
 
     def start(self):
-        self.icon.run_detached()
+        # 自定义 setup：pystray 只有在**窗口创建成功后**（_mark_ready 才投递队列）才会
+        # 调度它。于是 `_ready` 事件 = "托盘窗口真的立起来了"；受限终端/沙箱里
+        # run_detached 的失败发生在其内部线程（无法在本线程 except），只能同步地观测
+        # 这个就绪信号；异常本身由 threading.excepthook 记进 crash.log。
+        self.icon.run_detached(setup=self._on_ready)
         threading.Thread(target=self._menu_refresh_loop, daemon=True).start()
+
+    def _on_ready(self, icon):
+        # 传了自定义 setup 后 pystray 不再自动 visible=True（见 run_detached 文档）。
+        icon.visible = True
+        self._ready.set()
+
+    def wait_ready(self, timeout):
+        """等托盘窗口真正就绪；True = 就绪，False = 超时（调用方转成可读启动失败）。"""
+        return self._ready.wait(timeout)
 
     def stop(self):
         self._stop.set()
@@ -987,19 +1124,115 @@ def type_text(text):
     user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
 
+# ---------- 启动失败可读化 ----------
+# 受限终端 / 沙箱 / 远程会话里，托盘窗口与 Tk 浮窗都可能建不起来。旧实现让异常冒到
+# __main__，--noconsole 打包后只剩一段英文 traceback（用户既读不懂也拷不走）。统一转成：
+# best-effort 崩溃日志 + MessageBoxW 可读提示 + 退出码 2；无头入口不弹窗。
+_HEADLESS_ARGS = frozenset({"--smoke", "--quit", "--autotest"})
+TRAY_READY_TIMEOUT = 8.0   # 秒；托盘窗口在这个时间内没就绪就按启动失败处理
+
+
+def _message_box(text, title=None):
+    """MessageBoxW 兜底；没有桌面/没有 user32 时静默失败（不能反过来崩）。"""
+    try:
+        ctypes.windll.user32.MessageBoxW(None, text, title or APP_NAME, 0x10)
+        return True
+    except Exception:
+        return False
+
+
+def _readable_failure_text(headline, detail):
+    """启动失败的用户可读文案（含"照着做"的提示 + 可复制给维护者的详情尾部）。"""
+    lines = [
+        headline,
+        "",
+        i18n.t("gui_failed_reason"),
+        i18n.t("gui_failed_hint_explorer"),
+        i18n.t("gui_failed_hint_restart"),
+    ]
+    if _LOG_INIT_ERROR is not None:
+        lines.extend(["", i18n.t("log_dir_unwritable_note")])
+    lines.extend(["", i18n.t("failure_detail_hint"), str(detail or "")[-1500:]])
+    return "\n".join(lines)
+
+
+def _show_startup_failure(text):
+    """启动失败提示：尽力留证据 + 人话弹窗；本身绝不能抛。"""
+    try:
+        written = crash_log(text)
+        if written is not None:
+            log("startup failure log written: %s" % written)
+    except Exception:
+        pass
+    try:
+        print(text, file=sys.stderr, flush=True)
+    except Exception:
+        pass
+    if _HEADLESS_ARGS.intersection(sys.argv):
+        return      # 构建/CI/诊断入口没有人看弹窗，弹了只会把流水线挂住
+    try:
+        _message_box(text, i18n.t("startup_failure_title"))
+    except Exception:
+        pass
+
+
+def _start_tray(ctrl):
+    """建托盘并等它真正就绪；返回 (tray, None) 或 (None, 失败详情)。
+
+    两层失败都收在这里：
+      * `Tray()` / `start()` 的**同步**异常（构造、线程启动）；
+      * `run_detached()` 内部线程里的失败（实测形态：受限环境 ChangeWindowMessageFilterEx
+        拒绝访问 → OSError WinError 5）。后者无法在本线程 except，只能由"就绪事件超时"
+        观测到；详情从 threading.excepthook 记下的最近一次崩溃里取。
+    """
+    try:
+        tray = Tray(ctrl)
+        tray.start()
+    except Exception:
+        return None, traceback.format_exc()
+    wait_ready = getattr(tray, "wait_ready", None)
+    # 替身/其它后端没有就绪信号 ⇒ 视为已就绪（真实 Tray 恒有）。
+    if callable(wait_ready) and not wait_ready(TRAY_READY_TIMEOUT):
+        try:
+            tray.stop()
+        except Exception:
+            pass
+        detail = _last_crash_text() or (
+            "tray did not become ready within %.1f s" % TRAY_READY_TIMEOUT)
+        return None, detail
+    return tray, None
+
+
+def main_entry():
+    """`__main__` 的唯一入口：启动期任何未捕获异常 → 可读提示 + 退出码 2。
+
+    已在 main() 内单独处理的两类（窗口/托盘）不会走到这里；本函数兜住其余
+    启动期意外，保证冻结的 noconsole exe 不再把英文 traceback 甩给用户。
+    """
+    try:
+        return main()
+    except Exception as exc:
+        detail = traceback.format_exc()
+        log("fatal startup error:\n" + detail)
+        _show_startup_failure(
+            _readable_failure_text(i18n.t("startup_failed_headline", exc), detail))
+        return 2
+
+
 def main():
+    global _TRAY_ICON
     _install_excepthooks()
-    # i18n 先于单实例守卫初始化：重复实例的提示框也要出正确的语言
+    # i18n 先于单实例守卫初始化：提示文案（托盘气泡/启动失败弹窗）要出正确的语言
     i18n.init(i18n.load_language_from_config(CONFIG_PATH))
     if not tray_kit.acquire_single_instance(APP_ID, log=log):
-        # 2.0.2：整段文案经 message/title 注入 i18n，英文模式不再出现中文外壳
-        tray_kit.warn_duplicate_instance(
-            APP_NAME,
-            message="\n\n".join([i18n.t("dup_running") % APP_NAME,
-                                 i18n.t("dup_hint"),
-                                 i18n.t("dup_cancelled")]),
-            title=APP_NAME)
+        # 重复启动不再弹模态框（用户把它当"报错"）：写 show.request 请常驻实例弹气泡，
+        # 本进程静默退出 0；写不进去也只落日志（少一次气泡，不拦退出）。
+        log("another instance is already running; asking it to notify")
+        request_show_notification()
         return 0
+    # 拿到单实例锁 ⇒ 磁盘上残留的 show.request 不可能属于活实例（上一轮在 1 秒拍消费前
+    # 就退出了）：先清掉，免得本次启动弹一个误导性的"已在运行"气泡。
+    clear_stale_show_request()
     # exe-delete-guard（paths 1.1.4）：让**内核**替我们拒绝"删除/改名正在运行的实例目录"，而不是靠纪律。
     # **必须在托盘/窗口创建之前**（README 采纳步骤第 4 条："顺序不能再往后挪"）——所以放在
     # 守卫放行之后、`Overlay()`/`Tray()` 之前，而不是紧贴 `Overlay()`：这样更新兜底与自启
@@ -1018,14 +1251,32 @@ def main():
     # 只有这两行能把实例钉到具体的数据根与配置文件。
     log("data root: %s" % USER_DATA_DIR)
     log("config   : %s" % CONFIG_PATH)
-    overlay = Overlay()
+    try:
+        overlay = Overlay()
+    except Exception:
+        # Tk 浮窗建不起来（无交互桌面 / Tcl 运行时缺失 / 受限会话）⇒ 可读提示 + 退出码 2。
+        detail = traceback.format_exc()
+        log("window startup failed:\n" + detail)
+        _show_startup_failure(
+            _readable_failure_text(i18n.t("window_failed_headline"), detail))
+        return 2
     ctrl = Controller(overlay, None)
-    tray = Tray(ctrl)
+    tray, tray_detail = _start_tray(ctrl)
+    if tray is None:
+        # 托盘建不起来 ≠ 让用户看一段英文 traceback：可读说明 + best-effort 崩溃日志 + rc 2。
+        log("tray startup failed:\n" + tray_detail)
+        _show_startup_failure(
+            _readable_failure_text(i18n.t("tray_failed_headline"), tray_detail))
+        try:
+            overlay.root.destroy()
+        except Exception:
+            pass
+        return 2
+    _TRAY_ICON = tray
     ctrl.tray = tray
     ctrl.notify = tray.notify
     ctrl.on_state_change = tray.set_recording
 
-    tray.start()
     tray.set_title(i18n.t("tray_loading") % APP_NAME)
     tray.notify(i18n.t("notify_loading"))
 
@@ -1037,13 +1288,18 @@ def main():
 
     # --quit 请求文件监视（tray_kit 三循环之③）：走与托盘退出同一条清理路径。
     # 纪律：请求文件落在数据区，必须随 <APP>_DATA_DIR 重定向。
-    quit_stop = threading.Event()
+    watch_stop = threading.Event()
     threading.Thread(
         target=tray_kit.quit_watch_loop,
-        args=(quit_stop, tray_kit.make_quit_request_path(USER_DATA_DIR),
+        args=(watch_stop, tray_kit.make_quit_request_path(USER_DATA_DIR),
               lambda: ctrl.ui_q.put(("exit",))),
         kwargs={"log": log},
         daemon=True,
+    ).start()
+    # 重复启动移交（本工具自持）：第二实例只写 show.request，这里 1 秒拍消费 → 托盘气泡。
+    # 与 quit 循环**并行**：--quit 的优先级不被 show 请求影响（两个文件、两条处理路径）。
+    threading.Thread(
+        target=show_watch_loop, args=(watch_stop,), name="show-watch", daemon=True,
     ).start()
 
     try:
@@ -1078,7 +1334,7 @@ def main():
         overlay.root.mainloop()
     finally:
         log("exit")
-        quit_stop.set()
+        watch_stop.set()
         # 状态单一来源：脚本路径由模块的 pending_cmd() 现取（不再在 Controller 里存副本）。
         if pending_cmd() and ctrl.quit_apply_update:
             # 无控制台、脱离父进程地拉起替换脚本（旧 os.system('start /min') 会闪黑框）。
@@ -1095,13 +1351,37 @@ def main():
         tray.stop()
 
 
-def smoke():
-    """冒烟测试：加载配置和模型，结果写入 smoke.log。"""
+def _smoke_log_path():
+    """`--smoke` 结果文件：exe 同目录（源码运行时 = src/ 同目录）。"""
     if getattr(sys, "frozen", False):
         base = os.path.dirname(os.path.abspath(sys.executable))
     else:
         base = os.path.dirname(os.path.abspath(__file__))
-    log = os.path.join(base, "smoke.log")
+    return os.path.join(base, "smoke.log")
+
+
+def _write_smoke_log(text):
+    """best-effort 写冒烟结果：只读安装目录/受限沙箱里写不出也**不能再抛**。
+
+    旧实现把 `open(...)` 放在 except 处理里裸着写：冒烟失败时若结果文件也写不了
+    （只读目录/被占住），异常会从 smoke() 冒出去，退出码变成解释器错误而不是冒烟结论。
+    """
+    path = _smoke_log_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return True
+    except Exception as exc:
+        try:
+            print("smoke log write failed (%s): %s" % (path, exc),
+                  file=sys.stderr, flush=True)
+        except Exception:
+            pass
+        return False
+
+
+def smoke():
+    """冒烟测试：加载配置和模型，结果写入 smoke.log（写不出也不抛，退出码照旧）。"""
     try:
         # 冒烟必须覆盖单实例守卫——用 tray_kit 探针（只验名字合法，不占锁、
         # 不弹窗），与运行期守卫共用同一份命名判据（2.2.0 的 mutex_name_ok）。
@@ -1114,13 +1394,10 @@ def smoke():
             raise RuntimeError(i18n.t("smoke_model_dir_missing", pipeline.MODEL_DIR))
         engine = AsrEngine()
         del engine
-        msg = "OK model_dir=" + pipeline.MODEL_DIR
-        with open(log, "w", encoding="utf-8") as f:
-            f.write(msg)
+        _write_smoke_log("OK model_dir=" + pipeline.MODEL_DIR)
         return 0
     except Exception as e:
-        with open(log, "w", encoding="utf-8") as f:
-            f.write("FAIL " + str(e))
+        _write_smoke_log("FAIL " + str(e))
         return 1
 
 
@@ -1185,7 +1462,7 @@ def request_quit():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("quit", encoding="utf-8")
         return 0
-    except OSError as exc:
+    except Exception as exc:   # 诊断入口：失败给退出码 1，不抛 traceback
         dprint("quit request failed:", exc)
         return 1
 
@@ -1198,4 +1475,4 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] == "--autotest":
         autotest(sys.argv[2])
     else:
-        sys.exit(main())
+        sys.exit(main_entry())
