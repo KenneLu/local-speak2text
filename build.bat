@@ -8,7 +8,8 @@ rem Usage: build.bat [norun] [nopause]
 rem   norun    do not start the built exe (starting it is the default)
 rem   nopause  unattended (no "press any key") - used by CI
 rem
-rem Version comes from appconfig.VERSION (single source of truth).
+rem Version comes from app_params.py VERSION (single source of truth; Wave 2 moved it
+rem out of the template borrow into the tool-owned parameter card).
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions
 cd /d "%~dp0"
@@ -32,15 +33,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Version: read from appconfig.py so the script and the app cannot drift apart.
+rem Version: read from app_params.py so the script and the app cannot drift apart.
 rem Robust parse: take everything after '=', drop quotes, then keep the FIRST
 rem space-delimited token. A trailing comment on the VERSION line can therefore
 rem never leak into the version string / release path (same fix in the template).
 set VERSION=
-for /f "tokens=2 delims==" %%a in ('%SystemRoot%\System32\findstr.exe /b /c:"VERSION = " src\template\appconfig\appconfig.py') do set VERSION=%%a
+for /f "tokens=2 delims==" %%a in ('%SystemRoot%\System32\findstr.exe /b /c:"VERSION = " src\app_params.py') do set VERSION=%%a
 for /f "tokens=1" %%a in ("%VERSION:"=%") do set VERSION=%%a
 if not defined VERSION (
-  echo [ERROR] Cannot read VERSION from src\template\appconfig\appconfig.py.
+  echo [ERROR] Cannot read VERSION from src\app_params.py.
   if not defined NOPAUSE pause
   exit /b 1
 )
@@ -123,7 +124,7 @@ rem ---------------------------------------------------------------------------
 rem GATE 1: compile every module
 rem ---------------------------------------------------------------------------
 echo [TEST] compile check ...
-"%PY%" -m py_compile src/main.py src/pipeline.py src/icons.py src/keyboard_hook.py src/wasapi_probe.py src/template/i18n/i18n.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py src/template/update_helper/update_helper.py
+"%PY%" -m py_compile src/main.py src/pipeline.py src/icons.py src/keyboard_hook.py src/wasapi_probe.py src/app_params.py src/template/i18n/i18n.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py src/template/update_helper/update_helper.py
 if errorlevel 1 (
   echo [ERROR] compile check failed.
   if not defined NOPAUSE pause

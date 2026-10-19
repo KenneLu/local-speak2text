@@ -15,6 +15,8 @@ jobs:
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-python@v5
         with:
@@ -35,7 +37,7 @@ jobs:
         # list, so `py_compile` failed on a missing file and this workflow has been red on
         # every push since - unnoticed because only the tag-triggered release workflow was
         # watched. The module that REPLACED it is listed instead.
-        run: python -m py_compile src/main.py src/pipeline.py src/template/i18n/i18n.py src/icons.py src/template/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py
+        run: python -m py_compile src/main.py src/pipeline.py src/template/i18n/i18n.py src/icons.py src/template/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/app_params.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py
 
       # GATE 2d from build.bat, run here as well. It needs no ASR model, and until now the
       # only thing that ran it was the tag-triggered release workflow - which is exactly why

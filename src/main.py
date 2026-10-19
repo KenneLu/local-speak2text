@@ -25,8 +25,10 @@ from tkinter import filedialog, font as tkfont, messagebox
 import pystray
 
 from template import i18n, log_kit, tray_kit   # noqa: E402
-from template.appconfig import (APP_ID, APP_NAME, COLOR_IDLE, COLOR_RECORDING,
-                               ICON_DRAW, VERSION)
+# Wave 2：参数卡拆分——标准键仍从 template.appconfig 取（kit 用工具卡覆盖，单一事实源
+# 是 src/app_params.py 文件）；专有键 COLOR_IDLE/COLOR_RECORDING 由工具卡持有，直接取。
+from template.appconfig import APP_ID, APP_NAME, ICON_DRAW, VERSION   # noqa: E402
+from app_params import COLOR_IDLE, COLOR_RECORDING   # noqa: E402
 from template.autostart import is_autostart_enabled, migrate_autostart, set_autostart
 from template.paths import (INSTALL_DIR, LOG_DIR, RUN_DIR, UPDATE_DIR,
                            USER_DATA_DIR, hold_exe_delete_guard)
