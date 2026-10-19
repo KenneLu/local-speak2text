@@ -76,7 +76,7 @@ build.bat norun nopause  :: 无人值守，CI 用
 release.bat          :: 打 v版本 tag 并推送；CI 构建并发布 zip
 ```
 
-版本号在 `src/app_params.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。共用机制件在 `src/template/`（钉住 `my-diy-tool-template` 的 git submodule 借条）；工具差异参数（含 `VERSION`、`COLOR_IDLE`/`COLOR_RECORDING` 与图标绘制函数）住在工具自持的参数卡 `src/app_params.py`，工具自身逻辑留在 `src/main.py` / `pipeline.py`。`local-speak2text.exe --quit` 可让运行中的实例退出（不弹确认框）。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+版本号在 `src/app_params.py`（`VERSION`）——应用、发布目录、git tag 的单一事实源；推 `v*` tag 即触发发版。共用机制件在 `src/template/`（钉住 `diy-tool-kit` 的 git submodule 借条）；工具差异参数（含 `VERSION`、`COLOR_IDLE`/`COLOR_RECORDING` 与图标绘制函数）住在工具自持的参数卡 `src/app_params.py`，工具自身逻辑留在 `src/main.py` / `pipeline.py`。`local-speak2text.exe --quit` 可让运行中的实例退出（不弹确认框）。图标由代码生成（`icons.py`），无需美术素材。界面中英双语（`i18n.py`）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可
 
