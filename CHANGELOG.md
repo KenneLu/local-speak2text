@@ -3,6 +3,9 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.8
+- **CI-only hotfix for the 1.4.7 release gate** (2026-10-20): `tests/test_startup_fallback.py` initialized the interface language early, but `main()` re-initializes the language from the config (`auto` -> the runner's UI language, English), so the Chinese readable-text/balloon assertions failed on the tag build (green on a zh-CN machine; `tests` workflow also went red). The test now pins the config-language lookup to `zh`; the explicit `init("en")` localization checks in section D are unaffected. No runtime behavior change. VERSION 1.4.7 -> 1.4.8.
+
 ## Unreleased
 - **模板件拷贝改 git submodule 借条 + 参数卡（Wave 2，2026-10-19）**：`src/template/` 下的家族模块副本摘除，改为 `git submodule add https://github.com/KenneLu/my-diy-tool-template.git src/template`，钉 kit commit `c600cec`（家族模块只有一份来源）。工具差异参数搬入工具自持的 `src/app_params.py`，由 `template.appconfig` 运行时 `try: import app_params` 覆盖；**专有键 `COLOR_IDLE` / `COLOR_RECORDING` 由本卡持有**（kit 参数卡不覆盖专有键），`main.py` 的 import 拆为「标准键仍从 `template.appconfig` 取」+「`COLOR_*` 从 `app_params` 取」。
 - **版本单一事实源搬家**：`VERSION` 从 `src/template/appconfig/appconfig.py` 搬到 `src/app_params.py`（借条是模板仓内容，不再承载工具版本）；`build.bat` / `release.bat` / `.github/workflows/release.yml` 的 VERSION 解析路径与报错文案、`README.md` / `README.zh-CN.md` 的说明同步；`build.bat` 与 CI `tests.yml` 的 py_compile 列表补 `src/app_params.py`。CI 两个 workflow 的 checkout 改为 `submodules: recursive`（借条模式下裸 checkout 的编译/测试必红）。无运行时行为变化。

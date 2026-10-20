@@ -54,6 +54,12 @@ import main as M  # noqa: E402
 from template import i18n  # noqa: E402
 from template.paths import LOG_PATH  # noqa: E402
 
+# CI runner 的 Windows UI 语言是英文：main() 会按配置重新 init 语言（auto -> en），
+# 而本测试断言中文可读文案/气泡。把「从配置读语言」钉成 zh；D5 里显式 init(en)
+# 的本地化校验不经过 main()，不受影响。
+i18n.init("zh")
+i18n.load_language_from_config = lambda _cfg: "zh"
+
 FAILS = []
 
 
