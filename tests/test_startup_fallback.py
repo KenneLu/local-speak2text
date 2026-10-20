@@ -48,6 +48,9 @@ from _cleanup import rmtree_cleanup, scratch_dir  # noqa: E402  （同目录助�
 _TMP = scratch_dir("l-s2t-startfallback-")
 os.environ["LOCAL_SPEAK2TEXT_DATA_DIR"] = _TMP
 os.environ["LOCAL_SPEAK2TEXT_CONFIG"] = str(Path(_TMP) / "config.json")
+# 测试不得打开真实资源管理器：open_log_dir() 会对临时目录 os.startfile，
+# 临时目录清理后 Windows 会弹「位置不可用」错误框（2026-10-20 实测）。
+os.startfile = lambda *a, **k: None  # type: ignore[assignment]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import main as M  # noqa: E402
