@@ -3,6 +3,9 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.9
+- Template pointer upgraded to diy-tool-kit v1.0.0 (docs split + CLI/tray guidance).
+
 ## 1.4.8
 - **CI-only hotfix for the 1.4.7 release gate** (2026-10-20): `tests/test_startup_fallback.py` initialized the interface language early, but `main()` re-initializes the language from the config (`auto` -> the runner's UI language, English), so the Chinese readable-text/balloon assertions failed on the tag build (green on a zh-CN machine; `tests` workflow also went red). The test now pins the config-language lookup to `zh`; the explicit `init("en")` localization checks in section D are unaffected. No runtime behavior change. VERSION 1.4.7 -> 1.4.8.
 
