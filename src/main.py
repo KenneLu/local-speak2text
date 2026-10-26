@@ -492,23 +492,19 @@ class Tray:
         self.refresh()
 
     def _check_update(self, icon, item):
-        def worker():
+        """统一消息模式（模板 update_ui 1.1.0）：先提示，1 秒后真查，再发结果消息。"""
+        def check():
             repo = update_repo()
             if not repo:
-                self.controller.ui_q.put(("update_status", i18n.t("update_no_repo")))
-                return
-            # check_update 在**成功路径**上顺带发布 UPDATE_READY（模块唯一写入点），
-            # 这里不再手工同步任何副本。
-            result = check_update(VERSION, force=True, repo=repo)
-            if result.get("newer"):
-                self.controller.ui_q.put(("update_found", result["latest"]))
-            elif result.get("error"):
-                # error 已自带 http_error_hint（403/429 配额人话），无需调用方再判。
-                self.controller.ui_q.put(("update_status", i18n.t("update_check_fail") % result["error"]))
-            elif result.get("latest"):
-                self.controller.ui_q.put(("update_status", i18n.t("update_latest") % result["latest"]))
-        threading.Thread(target=worker, daemon=True).start()
+                return {"newer": False, "latest": "",
+                        "error": i18n.t("update_no_repo")}
+            return check_update(VERSION, force=True, repo=repo)
 
+        update_ui.run_check_flow(
+            check,
+            lambda message: self.controller.ui_q.put(("update_message", message)),
+            VERSION, lang=i18n.current_lang(),
+            on_result=lambda _result: self.controller.ui_q.put(("update_checked",)))
     def _apply_update(self, icon, item):
         latest = update_ready()
         if not latest:
@@ -855,6 +851,11 @@ class Controller:
             self.notify(ev[1])
         elif kind == "update_dialog":
             self._run_update_dialog(ev[1])
+        elif kind == "update_message":
+            self.notify(ev[1])
+        elif kind == "update_checked":
+            if self.tray is not None:
+                self.tray.refresh()
         elif kind == "help":
             self._show_help_dialog()
 

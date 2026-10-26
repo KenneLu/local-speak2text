@@ -3,6 +3,9 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.12
+- **检查更新统一为消息流程（模板 update_ui 1.1.0）**（2026-10-26）：点「检查更新」先提示「正在检查更新…」，1 秒后真正查询，再按结果发消息；下载仍走统一进度弹窗。配合 `update_repo` 配置可直接检查 GitHub 源。
+
 ## 1.4.11
 - **统一「下载并更新」交互（模板 update_ui 1.0.1 + update_helper 1.5.3）**（2026-10-26）：移除 l-s2t 私有的「后台下载 → 气泡通知 → 退出时替换」形态：点击下载立即弹窗显示进度条，完成后刷新为「更新已下载完成」并给出「立即更新 / 稍后更新」，明确说明需退出软件才能应用；立即更新=退出并拉起替换脚本，稍后更新=保留 pending，退出时按既有勾选项自动执行。另随模板修 OTA 替换链（静置/快速重试/无 Robocopy 黑窗）。
 - 弹窗在 Tk 主线程以 `Toplevel + wait_window` 嵌套运行（模板 update_ui 1.0.1 新增 parent 支持），不新开 Tk 线程。
