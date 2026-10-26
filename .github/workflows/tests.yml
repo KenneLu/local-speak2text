@@ -48,6 +48,11 @@ jobs:
       - name: Update chain safety (GATE 2d)
         run: python tests/test_update_safety.py
 
+
+      # Template-owned local OTA acceptance: package-root resolution + the REAL
+      # download_and_prepare() + rendered bat replacement chain (no network, no app).
+      - name: Local OTA acceptance (template ota_test)
+        run: python src/template/ota_test/run_local_ota_test.py --app-id local-speak2text
       # The gates after GATE 2d, one step each so a failure names the gate in the UI.
       # They use stubs and redirect their data root, so they need no ASR model - and
       # until now they ran ONLY inside build.bat (i.e. only in the tag-triggered

@@ -48,10 +48,13 @@ if not defined VERSION (
 set VERSION=%VERSION:"=%
 set APPNAME=local-speak2text
 set PACKAGE=%APPNAME%-%VERSION%
-rem The release folder keeps the version; the exe must NOT: the autostart
-rem registry value stores the full path, a versioned name would strand it.
+rem Naming rule (2026-10-26): the exe name and every folder the app / updater /
+rem user resolves are STABLE - no version. The version lives in the exe's PE
+rem metadata (generated below) and in the release ASSET name only; the
+rem versioned release build dir below is an internal build artifact.
 set RELEASE_DIR=release\%PACKAGE%
 set FROZEN_EXE=%RELEASE_DIR%\%APPNAME%.exe
+set VERSION_INFO=%CD%\build\version_info.txt
 
 echo [VERSION] %VERSION%  release: %RELEASE_DIR%
 
@@ -339,9 +342,28 @@ if errorlevel 1 (
 rem ---------------------------------------------------------------------------
 rem PyInstaller onedir noconsole
 rem ---------------------------------------------------------------------------
+echo [TEST] local OTA acceptance (template ota_test) ...
+"%PY%" src\template\ota_test\run_local_ota_test.py --app-id %APPNAME%
+if errorlevel 1 (
+  echo [ERROR] local OTA acceptance test failed - package-root resolution, replacement,
+  echo         backup rotation or cleanup broke. See the test output above.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
+echo [BUILD] version metadata (PE FileVersion/ProductVersion) ...
+if not exist build mkdir build
+"%PY%" src\template\build_release\version_file.py "%VERSION_INFO%" %VERSION% %APPNAME% KenneLu
+if errorlevel 1 (
+  echo [ERROR] version metadata generation failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
+
 echo [BUILD] PyInstaller onedir noconsole ...
 "%PY%" -m PyInstaller --paths "%CD%\src" --noconfirm --clean --onedir --noconsole ^
   --name %APPNAME% ^
+  --version-file "%VERSION_INFO%" ^
   --icon "%CD%\%APPNAME%-taskbar.ico" ^
   --add-data "%CD%\%APPNAME%.ico;." ^
   --add-data "%CD%\%APPNAME%-taskbar.ico;." ^
