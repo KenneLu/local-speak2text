@@ -3,6 +3,10 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.11
+- **统一「下载并更新」交互（模板 update_ui 1.0.1 + update_helper 1.5.3）**（2026-10-26）：移除 l-s2t 私有的「后台下载 → 气泡通知 → 退出时替换」形态：点击下载立即弹窗显示进度条，完成后刷新为「更新已下载完成」并给出「立即更新 / 稍后更新」，明确说明需退出软件才能应用；立即更新=退出并拉起替换脚本，稍后更新=保留 pending，退出时按既有勾选项自动执行。另随模板修 OTA 替换链（静置/快速重试/无 Robocopy 黑窗）。
+- 弹窗在 Tk 主线程以 `Toplevel + wait_window` 嵌套运行（模板 update_ui 1.0.1 新增 parent 支持），不新开 Tk 线程。
+
 ## 1.4.10
 - **在线更新修复 + 命名规则（模板 update_helper 1.5.1）**（2026-10-26）：模板修复包根解析（按内容判定，目录名/版本号不作判据），并确立“安装目录、exe 不携带版本号”的规则——版本写进 exe 的 PE 文件属性（FileVersion/ProductVersion）；本工具保持扁平 zip（无内层目录 ⇒ 无版本目录），发布前新增 OTA 布局门禁与 PE 版本门禁，新增模板自带本地 OTA 验收（已挂进 build.bat 与 CI）。旧版更新器无法手动自救的边界：本版需手动替换一次。
 

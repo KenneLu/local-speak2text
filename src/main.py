@@ -26,7 +26,7 @@ from tkinter import filedialog, font as tkfont, messagebox
 
 import pystray
 
-from template import i18n, log_kit, tray_kit   # noqa: E402
+from template import i18n, log_kit, tray_kit, update_ui   # noqa: E402
 # Wave 2：参数卡拆分——标准键仍从 template.appconfig 取（kit 用工具卡覆盖，单一事实源
 # 是 src/app_params.py 文件）；专有键 COLOR_IDLE/COLOR_RECORDING 由工具卡持有，直接取。
 from template.appconfig import APP_ID, APP_NAME, ICON_DRAW, VERSION   # noqa: E402
@@ -321,6 +321,13 @@ def update_repo():
 from template.tray_icons import tray_icons
 
 
+def _update_dialog_icon():
+    """统一更新弹窗标题栏图标（本工具自己的 48px 状态图）。"""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    candidate = base / "resources" / "icons" / "default" / "48.png"
+    return str(candidate) if candidate.is_file() else None
+
+
 # menu_is_open 探测器已随 tray_kit 2.3.0 下沉模板，此处不再内联。
 
 
@@ -506,20 +513,8 @@ class Tray:
         latest = update_ready()
         if not latest:
             return
-
-        def worker():
-            repo = update_repo()
-            if not repo:
-                self.controller.ui_q.put(("update_status", i18n.t("update_no_repo")))
-                return
-            try:
-                # 下载 + 校验 + 暂存 + 生成替换脚本（并发布 PENDING_CMD）一次完成。
-                download_and_prepare(latest, INSTALL_DIR, UPDATE_DIR,
-                                     log=dprint, repo=repo)
-                self.controller.ui_q.put(("update_staged", latest))
-            except Exception as e:
-                self.controller.ui_q.put(("update_status", i18n.t("update_download_fail") % e))
-        threading.Thread(target=worker, daemon=True).start()
+        # 统一更新弹窗在 Tk 线程上跑（Controller.poll 派发）；这里只投事件。
+        self.controller.ui_q.put(("update_dialog", latest))
 
     def _choose_model(self, icon, item):
         self.controller.ui_q.put(("choose_model",))
@@ -858,11 +853,39 @@ class Controller:
             self.notify(i18n.t("update_new") % (ev[1], VERSION))
         elif kind == "update_status":
             self.notify(ev[1])
-        elif kind == "update_staged":
-            # 替换脚本已在 download_and_prepare 里生成并发布（pending_cmd()）。
-            self.notify(i18n.t("update_ready_restart"))
+        elif kind == "update_dialog":
+            self._run_update_dialog(ev[1])
         elif kind == "help":
             self._show_help_dialog()
+
+    def _run_update_dialog(self, latest):
+        """统一更新弹窗（模板 update_ui）：进度 → 已完成 → 立即更新/稍后更新。"""
+        repo = update_repo()
+        if not repo:
+            self.notify(i18n.t("update_no_repo"))
+            return
+
+        def download(progress):
+            download_and_prepare(latest, INSTALL_DIR, UPDATE_DIR, log=dprint,
+                                 repo=repo, progress=progress)
+            return pending_cmd()
+
+        try:
+            decision = update_ui.run_download_dialog(
+                download, lang=i18n.current_lang(), app_name=APP_NAME,
+                parent=self.overlay.root, log=log, icon=_update_dialog_icon())
+        except Exception as exc:  # noqa: BLE001
+            log("update dialog failed: %s" % exc)
+            self.notify(i18n.t("update_download_fail") % exc)
+            return
+        if decision == "apply":
+            self.quit_apply_update = True
+            self.exit_requested = True
+            self.overlay.root.quit()
+        elif decision == "later":
+            self.quit_apply_update = True
+            log("update: user chose later; applies on next exit")
+            self.notify(i18n.t("update_ready_restart"))
         elif kind == "copy_model_prompt":
             self._copy_model_prompt()
         elif kind == "benchmark_start":

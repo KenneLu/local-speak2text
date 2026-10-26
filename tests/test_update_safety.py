@@ -568,7 +568,8 @@ finally:
 # ==================== D. launch_pending_cmd：无控制台 + 脱离父进程 ====================
 _root_d = Path(scratch_dir("l-s2t-launch-"))
 try:
-    # 旗标断言：必须是 CREATE_NO_WINDOW | DETACHED_PROCESS，且是 list 形式（无 shell）
+    # 旗标断言：CREATE_NO_WINDOW only（1.5.3 去掉 DETACHED：它会让 robocopy 自建可见 console），
+    # 且是 list 形式（无 shell）
     seen = {}
     _real_popen = subprocess.Popen
 
@@ -587,8 +588,8 @@ try:
           repr(seen.get("args")))
     check("launch: CREATE_NO_WINDOW set",
           bool(flags & getattr(subprocess, "CREATE_NO_WINDOW", 0)))
-    check("launch: DETACHED_PROCESS set",
-          bool(flags & getattr(subprocess, "DETACHED_PROCESS", 0)))
+    check("launch: DETACHED_PROCESS NOT set (no robocopy console)",
+          not (flags & getattr(subprocess, "DETACHED_PROCESS", 0)))
     check("launch: returns True", launched is True)
 
     # 真实拉起：脚本写 marker 后退出；调用立即返回，脚本继续跑完
