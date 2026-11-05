@@ -3,6 +3,9 @@
 All notable changes to local-speak2text are documented here.
 The tagging convention matches the versions in this file.
 
+## 1.4.13
+- **更新模板引用到 diy-tool-kit `55f627e`（update_ui 模态下载对话框约定 + ota_test 断言加固）**：`src/template` 借条从 `e779e30` 升到 `55f627e`（`v1.0.0-11-g55f627e`）。模板 `update_ui` 新增模态下载对话框约定——调用方不得加固定业务超时；`ota_test/run_local_ota_test.py` 补断言加固（防 `**kwargs` 绕过等）。VERSION 1.4.12 -> 1.4.13。
+
 ## 1.4.12
 - **检查更新统一为消息流程（模板 update_ui 1.1.0）**（2026-10-26）：点「检查更新」先提示「正在检查更新…」，1 秒后真正查询，再按结果发消息；下载仍走统一进度弹窗。配合 `update_repo` 配置可直接检查 GitHub 源。
 
