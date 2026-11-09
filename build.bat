@@ -172,133 +172,48 @@ rem ---------------------------------------------------------------------------
 set "LOCAL_SPEAK2TEXT_DATA_DIR=%CD%\build\test-data"
 
 rem ---------------------------------------------------------------------------
-rem GATE 2b: single-instance guard + normal startup path (headless, no GUI)
-rem   Regression for the 1.2.0-1.4.0 defect: an illegal mutex name made
-rem   CreateMutexW fail (err=3) and the guard treated that failure as
-rem   "already running", so the exe could never start. --smoke bypasses the
-rem   guard, so these two suites are the only gates that exercise the real
-rem   startup path.
+rem GATE 2b..2j：**glob 逐个跑**（`tests\test_*.py`）——否证 5 收口：点名清单会漏掉
+rem   新增测试（实测 18 个文件、点名只 10 个）。各测试的回归背景见下：
+rem
+rem   2b single_instance / startup_path：单实例守卫 + 正常启动路径（headless）。
+rem     回归 1.2.0-1.4.0：非法 mutex 名 → CreateMutexW 失败 → 守卫误判「已在运行」，
+rem     exe 永远起不来；--smoke 绕过守卫，故这两条是唯一走真实启动路径的闸。
+rem   2c i18n_menu：语言切换必须重建托盘菜单（回归模板 i18n 把 LANG 拷进包命名空间，
+rem     通知切英文而菜单仍是中文）。
+rem   2d update_safety：更新链安全（真跑渲染出的 apply.bat：成功/失败注入 + sha256
+rem     fail-closed + pending 证据保留）。
+rem   2e quit_failopen：退出决策三态必须分开（链路不可用→放行退出但不应用更新；
+rem     用户取消→不退出；确认→退出并按勾选应用）。
+rem   2f engine_model_dir / 2g main_model_dir：模型目录必须在**调用/使用**时读，
+rem     不能是 import 期快照（回归 #46/#47：改配置不生效）。
+rem   2h poll_matcher：更新脚本的轮询匹配必须有**判别力**（回归裸名 find 的 PATH 顺序
+rem     依赖：Git-Bash PATH 下永远返回 1 → 等待循环从不等待）。
+rem   2i delete_guard_wired：exe-delete-guard 必须**早**接（顺序 guard < overlay < tray）。
+rem   2j startup_fallback：重复启动必须静默；托盘/窗口创建失败必须可读 + 崩溃日志 +
+rem     退出码 2；日志/烟雾/崩溃尾巴必须 fail-open。
 rem ---------------------------------------------------------------------------
-echo [TEST] single instance guard ...
-"%PY%" tests\test_single_instance.py
+rem 临时目录泄漏门禁（temp_kit）：跑测试前后扫 %TEMP%\<APP_ID>*，本次新增 = 0。
+rem 先跑完所有测试再跑门禁——**测试失败也要检查泄漏**（先记 TESTFAIL，门禁跑完再一起红）。
+"%PY%" tests\temp_gate.py --save
 if errorlevel 1 (
-  echo [ERROR] single instance guard test failed.
+  echo [ERROR] temp baseline failed.
   if not defined NOPAUSE pause
   exit /b 1
 )
-
-echo [TEST] startup path ...
-"%PY%" tests\test_startup_path.py
-if errorlevel 1 (
-  echo [ERROR] startup path test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
+set "TESTFAIL=0"
+for %%t in (tests\test_*.py) do (
+  "%PY%" "%%t"
+  if errorlevel 1 (
+    echo [ERROR] test failed: %%t
+    set "TESTFAIL=1"
+  )
 )
-
-rem GATE 2c: language switch must rebuild the tray menu. Regression for the
-rem template i18n package copying LANG into its namespace: the notification
-rem switched to English while the menu stayed Chinese. The test reads the
-rem language from the PACKAGE and asserts _menu_signature() changes.
-echo [TEST] i18n menu refresh ...
-"%PY%" tests\test_i18n_menu.py
+"%PY%" tests\temp_gate.py
 if errorlevel 1 (
-  echo [ERROR] i18n menu refresh test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
+  echo [ERROR] temp-dir leak: %TEMP%\%APPNAME%\ gained NEW entries during the tests.
+  set "TESTFAIL=1"
 )
-
-rem GATE 2d: update-chain safety, with REAL execution of the rendered apply.bat
-rem (success + failure injection) plus sha256 fail-closed and pending-evidence
-rem retention. The bat is run with CREATE_NO_WINDOW and a .vbs fake exe so it
-rem cannot pop a console window onto the user's desktop.
-echo [TEST] update chain safety ...
-"%PY%" tests\test_update_safety.py
-if errorlevel 1 (
-  echo [ERROR] update chain safety test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2e: quit decision - the three states must stay distinct.
-rem   link unavailable (both dialog links raise) -> exit anyway, but do NOT apply a
-rem   pending update (the user was never asked this time); user cancel -> no exit;
-rem   confirmed -> exit and honour the persisted checkbox. Also asserts exactly ONE
-rem   exit event per decision, since a double release runs the exit tail twice.
-echo [TEST] quit decision (fail-open + tri-state) ...
-"%PY%" tests\test_quit_failopen.py
-if errorlevel 1 (
-  echo [ERROR] quit decision test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2f: AsrEngine must read MODEL_DIR at CALL time, not as an import-time
-rem   snapshot. Regression for #46: changing model_dir in the config had no effect
-rem   on the engine, so it kept loading the old model.
-echo [TEST] engine model dir (call-time, not snapshot) ...
-"%PY%" tests\test_engine_model_dir.py
-if errorlevel 1 (
-  echo [ERROR] engine model dir test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2g: the MAIN side must read the model dir at USE time, not hold an
-rem   import-time copy. Regression for #47: after switching the model dir, the
-rem   picker still opened at the old dir and the notification printed the old dir.
-echo [TEST] main-side model dir (use-time, not a frozen copy) ...
-"%PY%" tests\test_main_model_dir.py
-if errorlevel 1 (
-  echo [ERROR] main-side model dir test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2h: the update script's polling matcher must have DISCRIMINATING POWER.
-rem   Regression for the bare-name `find`. A bare name resolves by PATH ORDER, so the
-rem   outcome flips with the environment (measured, same probe, two contexts):
-rem     * Git-Bash-derived PATH -> Git's GNU find first -> returns 1 whether the
-rem       process runs or not -> zero discriminating power, the "wait for the old
-rem       process to exit" loop never waited;
-rem     * registry-merged PATH (what an explorer-launched app, and the apply.bat it
-rem       spawns, really inherit) -> System32 find first -> correct.
-rem   i.e. PATH-ORDER-dependent LATENT defect, not a universally broken one. The fix
-rem   is an absolute path so the outcome no longer depends on PATH order. This test
-rem   feeds two poll files and requires the two exit codes to DIFFER.
-echo [TEST] update poll matcher (discriminating power) ...
-"%PY%" tests\test_poll_matcher.py
-if errorlevel 1 (
-  echo [ERROR] update poll matcher test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2i: the exe-delete-guard must be WIRED, and wired EARLY. The mechanical
-rem   check (module-wiring-referenced) only proves the symbol is referenced somewhere; the template
-rem   README's requirement is a TIMING one ("before the tray/window is created -
-rem   the order may not move later"), so a call placed after Tray() would satisfy
-rem   "is referenced" while violating what the README actually asks for. This
-rem   test records the call order and asserts guard < overlay < tray. Proven to
-rem   discriminate: with the call moved after Tray() the ordering assertions go
-rem   red while "called exactly once" stays green; with the call deleted, three go red.
-echo [TEST] exe-delete-guard wiring (order: guard before window/tray) ...
-"%PY%" tests\test_delete_guard_wired.py
-if errorlevel 1 (
-  echo [ERROR] delete-guard wiring test failed.
-  if not defined NOPAUSE pause
-  exit /b 1
-)
-
-rem GATE 2j: startup fallbacks (1.4.7). Duplicate launch must be SILENT - it writes
-rem   show.request and exits 0 instead of showing a modal dialog; the resident instance
-rem   consumes the request and raises a tray balloon. Tray/window creation failures must
-rem   become a readable MessageBox + best-effort crash log + exit code 2 (never a bare
-rem   traceback), and the log/smoke/crash tail must be fail-open. All mocked: no Tk
-rem   window, no tray, no model, no real MessageBox.
-echo [TEST] startup fallbacks (duplicate silent + tray failure readable + log fail-open) ...
-"%PY%" tests\test_startup_fallback.py
-if errorlevel 1 (
-  echo [ERROR] startup fallback test failed.
+if not "%TESTFAIL%"=="0" (
   if not defined NOPAUSE pause
   exit /b 1
 )
