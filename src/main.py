@@ -858,6 +858,19 @@ class Controller:
                 self.tray.refresh()
         elif kind == "help":
             self._show_help_dialog()
+        elif kind == "copy_model_prompt":
+            self._copy_model_prompt()
+        elif kind == "benchmark_start":
+            self._start_benchmark()
+        elif kind == "benchmark_progress":
+            self._bench_progress(ev[1], ev[2])
+        elif kind == "benchmark_done":
+            self._bench_done(ev[1])
+        elif kind == "quit_confirm":
+            self._confirm_quit()
+        elif kind == "exit":
+            self.exit_requested = True
+            self.overlay.root.quit()
 
     def _run_update_dialog(self, latest):
         """统一更新弹窗（模板 update_ui）：进度 → 已完成 → 立即更新/稍后更新。"""
@@ -887,19 +900,6 @@ class Controller:
             self.quit_apply_update = True
             log("update: user chose later; applies on next exit")
             self.notify(i18n.t("update_ready_restart"))
-        elif kind == "copy_model_prompt":
-            self._copy_model_prompt()
-        elif kind == "benchmark_start":
-            self._start_benchmark()
-        elif kind == "benchmark_progress":
-            self._bench_progress(ev[1], ev[2])
-        elif kind == "benchmark_done":
-            self._bench_done(ev[1])
-        elif kind == "quit_confirm":
-            self._confirm_quit()
-        elif kind == "exit":
-            self.exit_requested = True
-            self.overlay.root.quit()
 
     def _show_help_dialog(self):
         top = tk.Toplevel(self.overlay.root)
