@@ -80,6 +80,15 @@ def _read(path):
         return ""
 
 
+def _newest_crash_in(log_dir):
+    """崩溃日志目录（logs/crash/）里最新的一份（一件一文件）；无则 None。"""
+    d = Path(log_dir) / "crash"
+    if not d.is_dir():
+        return None
+    files = sorted(d.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+    return files[0] if files else None
+
+
 def _wait_for(predicate, timeout=3.0, step=0.02):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -109,6 +118,7 @@ _SAVED = {
     "log_init_error": M._LOG_INIT_ERROR,
     "last_crash": dict(M._LAST_CRASH),
     "user_data_dir": M.USER_DATA_DIR,
+    "log_dir": M.LOG_DIR,
     "run_dir": M.RUN_DIR,
     "smoke_path": M._smoke_log_path,
     "load_config": M.load_config,
@@ -311,9 +321,23 @@ try:
     _stub_quiet_startup()
     M.Overlay = _FakeOverlay
     M._TRAY_ICON = None
-    crash_path = M._crash_log_paths()[0]
-    if crash_path.exists():
-        crash_path.unlink()
+    crash_dir = Path(M.LOG_DIR) / "crash"
+
+    def _newest_crash():
+        if not crash_dir.is_dir():
+            return None
+        files = sorted(crash_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+        return files[0] if files else None
+
+    def _clear_crash():
+        if crash_dir.is_dir():
+            for p in crash_dir.iterdir():
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+
+    _clear_crash()
 
     # C1：同步失败（构造托盘时 PermissionError —— 受限终端/沙箱的实测形态）。
     class _AccessDeniedTray:
@@ -335,8 +359,9 @@ try:
     check("C1 includes the technical detail for the maintainer",
           "PermissionError" in text and "ChangeWindowMessageFilterEx" in text,
           "traceback_tail=%s" % (text[-60:].replace("\n", " ") if text else ""))
-    check("C1 best-effort crash log is written",
-          crash_path.is_file() and "托盘" in _read(crash_path), str(crash_path))
+    check("C1 best-effort crash log is written (one file per incident in logs/crash/)",
+          _newest_crash() is not None and "托盘" in _read(_newest_crash()),
+          str(_newest_crash()))
     check("C1 failure is also logged", "tray startup failed" in _read(LOG_PATH), str(LOG_PATH))
 
     # C2：异步失败（pystray run_detached 内部线程抛异常，只能观测到"就绪超时"）。
@@ -469,7 +494,8 @@ try:
         M._LOG_HANDLE = _SAVED["log_handle"]
         M._LOG_INIT_ERROR = _SAVED["log_init_error"]
 
-    # D2：crash_log 宽捕异常 + 三级落点（用户数据区不可写 → 程序目录）。
+    # D2：crash_log 宽捕异常 + **单一落点**（用户数据区不可写 → 返回 None，不找下家）。
+    # 用户口径：崩溃日志只放 logs/crash/，不放 %TEMP%、不追加进主日志。
     class _UnwritableCrashPath:
         def mkdir(self, *_a, **_k):
             # 非 OSError：旧实现只吞 OSError，这里必须靠"宽捕 Exception"才过得去。
@@ -481,15 +507,17 @@ try:
 
     fallback_run_dir = Path(_TMP) / "run-dir"
     M.USER_DATA_DIR = _UnwritableDataDir()
+    M.LOG_DIR = _UnwritableDataDir()
     M.RUN_DIR = fallback_run_dir
     try:
         written = M.crash_log("simulated crash payload")
-        check("D2 crash_log falls back when the user data dir is unwritable",
-              written == fallback_run_dir / "crash.log", written)
-        check("D2 the fallback crash log really contains the payload",
-              "simulated crash payload" in _read(fallback_run_dir / "crash.log"))
+        check("D2 crash_log does NOT fall back (single landing: logs/crash/)",
+              written is None, written)
+        check("D2 no fallback file was created anywhere else",
+              not (fallback_run_dir / "crash.log").exists())
     finally:
         M.USER_DATA_DIR = _SAVED["user_data_dir"]
+        M.LOG_DIR = _SAVED["log_dir"]
         M.RUN_DIR = _SAVED["run_dir"]
 
     # D3：--smoke 结果文件写不出时不抛，成功/失败退出码照旧。
@@ -540,9 +568,9 @@ try:
     check("D4 uncaught thread exception is captured for the failure dialog",
           "probe-thread" in M._LAST_CRASH["text"] and "PermissionError" in M._LAST_CRASH["text"],
           M._LAST_CRASH["text"][:200])
-    check("D4 the last crash is also persisted to crash.log",
-          "probe-thread" in _read(_SAVED["user_data_dir"] / "crash.log"),
-          str(_SAVED["user_data_dir"] / "crash.log"))
+    _crash = _newest_crash_in(_SAVED["log_dir"])
+    check("D4 the last crash is also persisted (one file per incident in logs/crash/)",
+          _crash is not None and "probe-thread" in _read(_crash), str(_crash))
 
     # D5：新增词条两种语言都齐全、英文不含中文（双语 i18n 回归）。
     keys = ("notify_already_running", "startup_failure_title", "tray_failed_headline",

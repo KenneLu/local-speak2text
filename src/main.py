@@ -26,7 +26,7 @@ from tkinter import filedialog, font as tkfont, messagebox
 
 import pystray
 
-from template import i18n, log_kit, tray_kit, update_ui   # noqa: E402
+from template import i18n, log_kit, temp_kit, tray_kit, update_ui   # noqa: E402
 # Wave 2：参数卡拆分——标准键仍从 template.appconfig 取（kit 用工具卡覆盖，单一事实源
 # 是 src/app_params.py 文件）；专有键 COLOR_IDLE/COLOR_RECORDING 由工具卡持有，直接取。
 from template.appconfig import APP_ID, APP_NAME, ICON_DRAW, VERSION   # noqa: E402
@@ -135,35 +135,18 @@ def open_log_dir():
         pass
 
 
-def _crash_log_paths():
-    """崩溃日志落点（best-effort 链）：用户数据区 → 程序目录 → %TEMP%。
-
-    用户数据区不可写（受限终端 / 沙箱 / 只读安装位）时，不能连"为什么没起来"的
-    证据都留不下——这正是 workspace 里启动被环境限制时的形态。
-    """
-    return (
-        USER_DATA_DIR / "crash.log",
-        RUN_DIR / "crash.log",
-        Path(tempfile.gettempdir()) / (APP_ID + "-crash.log"),
-    )
-
-
 def crash_log(text):
-    """崩溃兜底：未捕获异常/启动失败写 crash.log，返回实际写入路径（全失败返回 None）。
+    """崩溃兜底：未捕获异常/启动失败写 ``<LOG_DIR>\\crash\\crash-<时间戳>-<随机>.log``
+    （一件一文件，保留 10 份），返回实际写入路径（全失败返回 None）。
 
+    走模板标准件 temp_kit：**不放 %TEMP%**（会被清理，证据会丢）、不追加进主日志。
     失败方向：宁可少一份日志，也不能在崩溃处理路径上再抛第二个异常（旧实现只吞
     OSError，异常对象/路径不是 OSError 时照样把异常钩子弄死）。
     """
-    line = time.strftime("%Y-%m-%d %H:%M:%S ") + str(text).rstrip() + "\n"
-    for path in _crash_log_paths():
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(line)
-            return path
-        except Exception:
-            continue
-    return None
+    try:
+        return temp_kit.write_crash_log("crash", str(text), directory=LOG_DIR / "crash")
+    except Exception:  # noqa: BLE001 - 崩溃路径绝不能再抛
+        return None
 
 
 def _last_crash_text():
