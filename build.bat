@@ -192,6 +192,14 @@ rem   2i delete_guard_wired：exe-delete-guard 必须**早**接（顺序 guard <
 rem   2j startup_fallback：重复启动必须静默；托盘/窗口创建失败必须可读 + 崩溃日志 +
 rem     退出码 2；日志/烟雾/崩溃尾巴必须 fail-open。
 rem ---------------------------------------------------------------------------
+rem 门禁自证（放最前）：自证内部会 gate_save 覆盖基线、且会建注入目录。
+rem 放测试前跑完并回滚——注入目录不污染基线，也不掩测试期的泄漏。
+"%PY%" tests\temp_gate_selfcheck.py
+if errorlevel 1 (
+  echo [ERROR] gate self-check failed.
+  if not defined NOPAUSE pause
+  exit /b 1
+)
 rem 临时目录泄漏门禁（temp_kit）：跑测试前后扫 %TEMP%\<APP_ID>*，本次新增 = 0。
 rem 先跑完所有测试再跑门禁——**测试失败也要检查泄漏**（先记 TESTFAIL，门禁跑完再一起红）。
 "%PY%" tests\temp_gate.py --save

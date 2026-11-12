@@ -39,6 +39,12 @@ jobs:
         # watched. The module that REPLACED it is listed instead.
         run: python -m py_compile src/main.py src/pipeline.py src/template/i18n/i18n.py src/icons.py src/template/update_helper/update_helper.py src/keyboard_hook.py src/wasapi_probe.py src/app_params.py src/template/appconfig/appconfig.py src/template/paths/paths.py src/template/log_kit/log_kit.py src/template/autostart/autostart.py src/template/tray_kit/tray_kit.py
 
+      - name: Temp-dir gate self-check (temp_kit)
+        run: python tests/temp_gate_selfcheck.py
+
+      - name: Temp-dir leak gate - baseline
+        run: python tests/temp_gate.py --save
+
       # GATE 2d from build.bat, run here as well. It needs no ASR model, and until now the
       # only thing that ran it was the tag-triggered release workflow - which is exactly why
       # an environment-dependent failure inside it stayed invisible until a release was cut
@@ -71,6 +77,9 @@ jobs:
 
       - name: Delete-guard wiring (GATE 2i)
         run: python tests/test_delete_guard_wired.py
+
+      - name: Temp-dir leak gate - check (new entries = 0)
+        run: python tests/temp_gate.py
 
       - name: i18n coverage
         run: |
