@@ -35,6 +35,7 @@
 """
 import io
 import os
+import shutil
 import sys
 import threading
 import time
@@ -494,31 +495,19 @@ try:
         M._LOG_HANDLE = _SAVED["log_handle"]
         M._LOG_INIT_ERROR = _SAVED["log_init_error"]
 
-    # D2：crash_log 宽捕异常 + **单一落点**（用户数据区不可写 → 返回 None，不找下家）。
-    # 用户口径：崩溃日志只放 logs/crash/，不放 %TEMP%、不追加进主日志。
-    class _UnwritableCrashPath:
-        def mkdir(self, *_a, **_k):
-            # 非 OSError：旧实现只吞 OSError，这里必须靠"宽捕 Exception"才过得去。
-            raise RuntimeError("simulated: data dir is not writable")
-
-    class _UnwritableDataDir:
-        def __truediv__(self, _name):
-            return _UnwritableCrashPath()
-
-    fallback_run_dir = Path(_TMP) / "run-dir"
-    M.USER_DATA_DIR = _UnwritableDataDir()
-    M.LOG_DIR = _UnwritableDataDir()
-    M.RUN_DIR = fallback_run_dir
+    # D2：crash_log 宽捕异常 + **兜底**（首选不可写 → %TEMP%\<APP_ID>\crash\）。
+    # 父路径是文件 → mkdir 必失败（OSError）；crash_log 宽捕，走兜底。
+    blocker = Path(_TMP) / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    M.LOG_DIR = blocker / "logs"
     try:
         written = M.crash_log("simulated crash payload")
-        check("D2 crash_log does NOT fall back (single landing: logs/crash/)",
-              written is None, written)
-        check("D2 no fallback file was created anywhere else",
-              not (fallback_run_dir / "crash.log").exists())
+        check("D2 unwritable LOG_DIR -> crash log falls back to %TEMP%\\<APP_ID>\\crash\\",
+              written is not None and written.parent == M.temp_kit.temp_root() / "crash"
+              and "simulated crash payload" in _read(written), written)
     finally:
-        M.USER_DATA_DIR = _SAVED["user_data_dir"]
         M.LOG_DIR = _SAVED["log_dir"]
-        M.RUN_DIR = _SAVED["run_dir"]
+        shutil.rmtree(M.temp_kit.temp_root() / "crash", ignore_errors=True)
 
     # D3：--smoke 结果文件写不出时不抛，成功/失败退出码照旧。
     M.tray_kit.mutex_name_is_valid = lambda *_a, **_k: True
