@@ -200,7 +200,7 @@ if errorlevel 1 (
   if not defined NOPAUSE pause
   exit /b 1
 )
-rem 临时目录泄漏门禁（temp_kit）：跑测试前后扫 %TEMP%\<APP_ID>*，本次新增 = 0。
+rem 临时目录泄漏门禁（temp_kit）：跑测试前后扫 %TEMP%\<APP_ID>\（收窄：只认工具目录本身），本次新增 = 0。
 rem 先跑完所有测试再跑门禁——**测试失败也要检查泄漏**（先记 TESTFAIL，门禁跑完再一起红）。
 "%PY%" tests\temp_gate.py --save
 if errorlevel 1 (
