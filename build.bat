@@ -222,6 +222,7 @@ if errorlevel 1 (
   set "TESTFAIL=1"
 )
 if not "%TESTFAIL%"=="0" (
+  echo [ERROR] one or more test gates failed - see [ERROR] test failed above.
   if not defined NOPAUSE pause
   exit /b 1
 )
